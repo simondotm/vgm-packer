@@ -2,6 +2,9 @@
 \ *	Headers
 \ ******************************************************************
 
+; VGM player uses N zero page vars
+VGM_ZP = &80
+
 
 ; Allocate vars in ZP
 .zp_start
@@ -37,6 +40,10 @@ ORG &1900
 ;INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debugging mainly
 ;INCLUDE "lib/disksys.asm"
 
+.vgm_data
+INCBIN "data/nd-ui.bin.lz4"
+
+IF FALSE
 .vgm_stream_0
 INCBIN "data/nd-ui.bin.0.part"
 .vgm_stream_1
@@ -53,11 +60,24 @@ INCBIN "data/nd-ui.bin.5.part"
 INCBIN "data/nd-ui.bin.6.part"
 .vgm_stream_7
 INCBIN "data/nd-ui.bin.7.part"
-
+ENDIF
 
 
 ;-------------------------------
 ; vgm player
+.vgm_start
+
+ALIGN 256
+
+.vgm_stream_buffers
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
 
 
 ; A contains data to be written to sound chip
@@ -111,7 +131,11 @@ INCBIN "data/nd-ui.bin.7.part"
 	rts
 }
 
+
+
 .vgm_streams
+    equw 0,0,0,0,0,0,0,0
+IF FALSE
     equb LO(vgm_stream_0)
     equb LO(vgm_stream_1)
     equb LO(vgm_stream_2)
@@ -128,7 +152,7 @@ INCBIN "data/nd-ui.bin.7.part"
     equb HI(vgm_stream_5)
     equb HI(vgm_stream_6)
     equb HI(vgm_stream_7)
-
+ENDIF
 
 ; A is stream id (0-7)
 ; clobbers X,Y
@@ -136,15 +160,15 @@ INCBIN "data/nd-ui.bin.7.part"
 {
     tax
     lda vgm_streams + 0, X
-    sta &80
+    sta VGM_ZP+0
     lda vgm_streams + 8, X
-    sta &81
+    sta VGM_ZP+1
     inc vgm_streams + 0, X
     bne no_page
     inc vgm_streams + 8, X
 .no_page
     ldy #0
-    lda (&80), y
+    lda (VGM_ZP+0), y
     rts
 }
 
@@ -171,15 +195,15 @@ INCBIN "data/nd-ui.bin.7.part"
 
     ; Channel 0 tone
     lda #0:jsr vgm_get_stream_byte:ora #&80 + (0<<5):jsr sn_write
-    lda #0:jsr vgm_get_stream_byte:ora #&00:jsr sn_write
+    lda #0:jsr vgm_get_stream_byte:jsr sn_write
 
     ; Channel 1 tone
     lda #1:jsr vgm_get_stream_byte:ora #&80 + (1<<5):jsr sn_write
-    lda #1:jsr vgm_get_stream_byte:ora #&00:jsr sn_write
+    lda #1:jsr vgm_get_stream_byte:jsr sn_write
 
     ; Channel 2 tone
     lda #2:jsr vgm_get_stream_byte:ora #&80 + (2<<5):jsr sn_write
-    lda #2:jsr vgm_get_stream_byte:ora #&00:jsr sn_write
+    lda #2:jsr vgm_get_stream_byte:jsr sn_write
 
 
     ; Channel 0-3 volumes
@@ -203,21 +227,86 @@ INCBIN "data/nd-ui.bin.7.part"
     rts
 }
 
+
+
+; X/Y point to VGM data stream
 .vgm_init
 {
+    ; parse data stream
+    ; we use LZ4 frame & block format for convenience
+    ; however there are assumptions for format:
+    ;  Magic number[4], Flags[1], MaxBlockSize[1], Header checksum[1]
+    ;  Contains 8 blocks
+    ; Obviously since this is an 8-bit CPU no files or blocks can be > 64Kb in size
+zp_block_data = VGM_ZP+0
+zp_block_size = VGM_ZP+2
+
+    ; Skip frame header, and move to first block
+    txa
+    clc
+    adc #7
+    sta zp_block_data+0
+    tya
+    adc #0
+    sta zp_block_data+1
+
+    ; read the block headers (size)
+    ldx #0
+.block_loop
+
+    ; read 16-bit block size to zp_block_size
+    ldy #0
+    lda (zp_block_data),Y
+    sta zp_block_size+0
+    iny
+    lda (zp_block_data),Y
+    sta zp_block_size+1
+
+    ; get address of block, store in vgm_streams[x]
+    lda zp_block_data+0
+    clc
+    adc #4
+    sta zp_block_data+0
+    sta vgm_streams + 0, x
+    lda zp_block_data+1
+    adc #0
+    sta zp_block_data+1
+    sta vgm_streams + 8, x
+
+    ; move to next block
+    lda zp_block_data+0
+    clc
+    adc zp_block_size+0
+    sta zp_block_data+0
+    lda zp_block_data+1
+    adc zp_block_size+1
+    sta zp_block_data+1
+
+    ; for all 8 blocks
+    inx
+    cpx #8
+    bne block_loop
+
+    ; clear vgm finished flag
     lda #0:sta vgm_finished
+
+    ; reset soundchip
     jsr sn_reset
     rts
 }
 
 
+.vgm_end
 
 
+PRINT " vgm code size is", (vgm_end-vgm_start), "bytes"
 
 ;----------------------------
 
 .main
 {
+    ldx #lo(vgm_data)
+    ldy #hi(vgm_data)
     jsr vgm_init
 
 .loop
