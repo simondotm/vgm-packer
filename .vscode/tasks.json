@@ -1,0 +1,45 @@
+{
+    "version": "0.1.0",
+    "command": "cmd",
+    "isShellCommand": true,
+    "showOutput": "always",
+    "echoCommand": true,
+    "suppressTaskName": true,
+    "args": [
+        "/C"
+    ],
+    "tasks": [
+        {
+            "taskName": "Run 'vgmplayer.ssd' in Emulator",
+            "isTestCommand": true,
+            "args": [
+                "BeebEm.exe vgmplayer.ssd"
+            ]
+        },
+        {
+            "taskName": "vgmplayer.ssd",
+            "problemMatcher": {
+                "owner": "6502",
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "severity": 3,
+                    "message": 4
+                }
+            },
+            "args": [
+                "BeebAsm.exe -v -i vgmplayer.asm -do vgmplayer.ssd -boot Main"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "isBuildCommand": true
+        }
+    ]
+}
