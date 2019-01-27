@@ -4,7 +4,7 @@
 
 ; VGM player uses 11 zero page vars from this address
 VGM_ZP = &80
-
+LZ4_FORMAT = FALSE
 
 ; Allocate vars in ZP
 .zp_start
@@ -273,9 +273,11 @@ DEBUG=FALSE
     sbc zp_temp
     sta zp_window_src
 
+IF LZ4_FORMAT
     ; fetch match offset HI, but ignore it.
     ; this implementation only supports 8-bit windows.
     jsr lz_fetch_byte    
+ENDIF
 
     ; fetch match length
     lda zp_match_cnt+0
@@ -790,7 +792,11 @@ ENDIF
 .vgm_data
 ;INCBIN "data/nd-ui.bin.lz4"
 ;INCBIN "data/androids.bin.lz4"
-INCBIN "data/mongolia.bin.lz4"
+;INCBIN "data/mongolia.bin.lz4"
+;INCBIN "data/mongolia.bin.vgc"
+;INCBIN "data/darkside1.bin.vgc"
+INCBIN "data/CPCTL10A.bin.vgc"
+
 PRINT ~vgm_data
 
 ALIGN 256
