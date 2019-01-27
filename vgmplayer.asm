@@ -33,7 +33,9 @@ INCLUDE "lib/bbc_utils.h.asm"
 \ *	Utility code - always memory resident
 \ ******************************************************************
 
-ORG &1900
+ORG &1100
+GUARD &7c00
+
 .start
 
 ;----------------------------
@@ -55,57 +57,31 @@ ALIGN 256
 
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
     skip  8*8
-    ; zp_stream_src LO
-    ; zp_stream_src HI
-    ; zp_literal_cnt LO
-    ; zp_literal_cnt HI
-    ; zp_match_cnt LO
-    ; zp_match_cnt HI
-    ; zp_window_src - index 
-    ; zp_window_dst - index
-
-;zp_stream_src   = VGM_ZP + 0    ; stream data ptr
-;zp_literal_cnt  = VGM_ZP + 2    ; literal count
-;zp_match_cnt    = VGM_ZP + 4    ; match count
-;zp_window_src   = VGM_ZP + 6    ; window read ptr
-;zp_window_dst   = VGM_ZP + 7    ; window write ptr
+    ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
+    ;zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
+    ;zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
+    ;zp_window_src   = VGM_ZP + 6    ; window read ptr - index
+    ;zp_window_dst   = VGM_ZP + 7    ; window write ptr - index
 .vgm_buffer_end
 
 ALIGN 256
 
 .main
 {
-    ;jmp testbed
-
-    jsr testinit
     ldx #lo(vgm_data)
     ldy #hi(vgm_data)
     jsr vgm_init
 
-.testloop
-;lda id
-;MPRINT T_id
-;inc id
-;lda #0:jsr vgm_get_register_data
-;jsr &ffe0
-;jmp testloop
-
 .loop
     lda #19:jsr &fff4
     jsr vgm_update
-    ;jsr &ffe0
-    jmp loop
     beq loop
     rts
 }
 
 
-;.T_id EQUS "id %a", 13, 10, 0
-;.id EQUB 0
-
-
 ;INCLUDE "lib/swr.asm"
-INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debugging mainly
+;INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debugging mainly
 ;INCLUDE "lib/disksys.asm"
 
 
@@ -119,11 +95,11 @@ INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debug
 
 ; 8 zero page registers used
 lz_zp = VGM_ZP + 0
-zp_stream_src   = lz_zp + 0    ; stream data ptr
-zp_literal_cnt  = lz_zp + 2    ; literal count
-zp_match_cnt    = lz_zp + 4    ; match count
-zp_window_src   = lz_zp + 6    ; window read ptr
-zp_window_dst   = lz_zp + 7    ; window write ptr
+zp_stream_src   = lz_zp + 0    ; stream data ptr LO/HI
+zp_literal_cnt  = lz_zp + 2    ; literal count LO/HI
+zp_match_cnt    = lz_zp + 4    ; match count LO/HI
+zp_window_src   = lz_zp + 6    ; window read ptr - index
+zp_window_dst   = lz_zp + 7    ; window write ptr - index
 ; 8 bytes total workspace
 
 ; these variables are not preserved across context switches
@@ -198,17 +174,6 @@ zp_stash = lz_zp + 12          ; 1 byte
     rts
 }
 
-;.T_lz_decode_byte EQUS "lz_decode_byte", 13, 10, 0
-;.T_try_literal EQUS "try_literal", 13, 10, 0
-;.T_try_match EQUS "try_match", 13, 10, 0
-;.T_try_token EQUS "try_token %a", 13, 10, 0
-;.T_is_literal EQUS "is_literal", 13, 10, 0
-;.T_is_match EQUS "is_match", 13, 10, 0
-;.T_literalc1 EQUS " literal count %b", LO(zp_literal_cnt+1), HI(zp_literal_cnt+1), " HI.", 13, 10, 0
-;.T_literalc0 EQUS " literal count %b", LO(zp_literal_cnt+0), HI(zp_literal_cnt+0), " LO.", 13, 10, 0
-
-DEBUG=FALSE
-
 ; decode a byte from the currently selected register stream
 ; unlike typical lz style unpackers we are using a state machine
 ; because it is necessary for us to be able to decode a byte at a time from 8 separate streams
@@ -222,15 +187,8 @@ DEBUG=FALSE
     ; lz4 block format:
     ;  [TOKEN][LITERAL LENGTH][LITERALS][...][MATCH OFFSET][MATCH LENGTH]
 
-
-;MPRINT T_lz_decode_byte
-;jsr &ffe0
-
 ; try fetching a literal byte from the stream
 .try_literal
-
-;MPRINT T_try_literal
-;jsr &ffe0
 
     lda zp_literal_cnt+0
     bne is_literal
@@ -238,12 +196,6 @@ DEBUG=FALSE
     beq try_match
 
 .is_literal
-
-;MPRINT T_is_literal
-;MPRINT T_literalc1
-;MPRINT T_literalc0
-;jsr &ffe0
-
 
     ; fetch a literal & stash in decode buffer
     jsr lz_fetch_byte     
@@ -299,8 +251,6 @@ ENDIF
 
 ; try fetching a matched byte from the stream
 .try_match
-;MPRINT T_try_match
-;jsr &ffe0
 
     lda zp_match_cnt+1
     bne is_match
@@ -309,9 +259,6 @@ ENDIF
     beq try_token
 
 .is_match
-
-;MPRINT T_is_match
-;jsr &ffe0
 
     jsr lz_fetch_buffer    ; fetch matched byte from decode buffer
     jsr lz_store_buffer    ; stash in decode buffer
@@ -336,9 +283,6 @@ ENDIF
 
     ; fetch a token
     jsr lz_fetch_byte     
-
-;MPRINT T_try_token
-
 
     tax
     ldy #0
@@ -386,7 +330,7 @@ ENDIF
 
 ; A contains data to be written to sound chip
 ; clobbers X
-.sn_write2
+.sn_write
 {
     sei
     ldx #255
@@ -401,9 +345,10 @@ ENDIF
     rts ; 21 bytes
 }
 
+IF FALSE
 ; A contains data to be written to sound chip
 ; clobbers Y
-.sn_write
+.sn_write2
 {
 	sei					; **SELF-MODIFIED CODE**
 
@@ -425,7 +370,7 @@ ENDIF
 	cli					; **SELF-MODIFIED CODE**
 	rts
 }
-
+ENDIF
 
 .sn_reset
 {
@@ -552,14 +497,6 @@ zp_block_size = VGM_ZP+2
     rts    
 }
 
-
-
-
-
-;.T_address0 EQUS "stream addr %b", LO(vgm_streams+0), HI(vgm_streams+0), " LO.", 13, 10, 0
-;.T_address1 EQUS "stream addr %b", LO(vgm_streams+1), HI(vgm_streams+1), " HI.", 13, 10, 0
-
-
 ;----------------------------------------------------------------------
 ; fetch register data byte from register stream selected in A
 ;  A is register id (0-7)
@@ -586,10 +523,6 @@ zp_block_size = VGM_ZP+2
     ; we have to load the required decoder context to ZP
     jsr vgm_load_register_context
 
-    ;MPRINT T_address0
-    ;MPRINT T_address1
-
-
     ; then fetch a decompressed byte
     jsr lz_decode_byte
     pha
@@ -603,47 +536,10 @@ zp_block_size = VGM_ZP+2
 
 .vgm_finished EQUB 0
 
-.vgm1 equb 0
-.vgm2 equb 0
-.vgm1a equb 0
-.vgm2a equb 0
-
 
 .vgm_get_data
 {
     ; SN76489 data register format is %1cctdddd where cc=channel, t=0=tone, t=1=volume, dddd=data
-
-IF FALSE
-.cont
-    lda #7:jsr vgm_get_register_data:sta vgm1
-
-    jsr gettestdata
-    sta vgm1a
-
-    lda vgm1
-    cmp vgm1a
-    beq ok1
-    lda &91:jsr drawnum
-    lda &90:jsr drawnum
-    lda #32:jsr &ffee
-    lda vgm1:jsr drawnum
-    lda #32:jsr &ffee
-    lda vgm1a:jsr drawnum
-    lda #32:jsr &ffee
-
-.ok1
-    jsr nexttest
-
-    lda &90:cmp #lo(test_dataend)
-    bne cont
-    lda &91:cmp #hi(test_dataend)
-    bne cont
-    lda #65:jsr &ffee
-    .crash
-    jmp crash
-.contX   
-    rts
-ENDIF
 
     ; Get Channel 3 tone first
     ; If it is 255 we have reached the EOF marker
@@ -714,96 +610,17 @@ ENDIF
 
 .vgm_end
 
-.hex equs "0123456789ABCDEF"
-.drawnum
-{
-    pha
-    and #&f0
-    lsr a:lsr a:lsr a:lsr a
-    tax
-    lda hex, X
-    jsr &ffee
-    pla
-    and #&0f
-    tax
-    lda hex, X
-    jsr &ffee
-
-    rts
-}
-.testinit
-{
-    lda #lo(test_data)
-    sta &90
-    lda #hi(test_data)
-    sta &91
-    rts
-}
-.gettestdata
-{
-    ldy #0
-    lda (&90),Y
-
-    rts    
-
-}
-
-.nexttest
-{
-    lda &90
-    clc
-    adc #1
-    sta &90
-    lda &91
-    adc #0
-    sta &91
-    rts
-}
-
-.testbed
-{
-    lda #lo(test_data)
-    sta &80
-    lda #hi(test_data)
-    sta &81
-.playloop
-    lda #19:jsr &fff4
-        lda #&90:jsr sn_write
-
-    ldy #0
-    lda (&80),Y
-    ora #&80
-    jsr sn_write
-    ldy #1
-    lda (&80),Y
-    jsr sn_write
-    lda &80
-    clc
-    adc #2
-    sta &80
-    lda &81
-    adc #0
-    sta &81
-    jmp playloop
-
-    rts
-}
 
 .vgm_data
 ;INCBIN "data/nd-ui.bin.lz4"
 ;INCBIN "data/androids.bin.lz4"
 ;INCBIN "data/mongolia.bin.lz4"
 ;INCBIN "data/mongolia.bin.vgc"
-;INCBIN "data/darkside1.bin.vgc"
-INCBIN "data/CPCTL10A.bin.vgc"
+INCBIN "data/darkside1.bin.vgc"
+;INCBIN "data/CPCTL10A.bin.vgc"
 
 PRINT ~vgm_data
 
-ALIGN 256
-.test_data
-INCBIN "data/nd-ui.bin.7.part"
-.test_dataend
-PRINT ~test_data
 
 
 PRINT "   lz code size is", (lz_end-lz_start), "bytes"
