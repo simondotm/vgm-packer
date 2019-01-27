@@ -42,8 +42,8 @@ GUARD &7c00
 
 .vgm_buffer_start
 
+; reserve space for the vgm decode buffers (8x256 = 2Kb)
 ALIGN 256
-; 8 decode buffers (2Kb)
 .vgm_stream_buffers
     skip 256
     skip 256
@@ -55,23 +55,18 @@ ALIGN 256
     skip 256
 
 
-.vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
-    skip  8*8
-    ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
-    ;zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
-    ;zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
-    ;zp_window_src   = VGM_ZP + 6    ; window read ptr - index
-    ;zp_window_dst   = VGM_ZP + 7    ; window write ptr - index
 .vgm_buffer_end
 
-ALIGN 256
 
 .main
 {
+    ; initialize the vgm player with a vgc data stream
+    lda #hi(vgm_stream_buffers)
     ldx #lo(vgm_data)
     ldy #hi(vgm_data)
     jsr vgm_init
 
+    ; loop & update
 .loop
     lda #19:jsr &fff4
     jsr vgm_update
@@ -86,12 +81,14 @@ ALIGN 256
 
 
 
+;---------------------------------------------------------------
+; VGM library code
+;---------------------------------------------------------------
+
 ;-------------------------------
-
 ; lz4 decoder
+;-------------------------------
 .lz_start
-
-
 
 ; 8 zero page registers used
 lz_zp = VGM_ZP + 0
@@ -107,8 +104,6 @@ zp_buffer = lz_zp + 8          ; Lo byte of current decode window buffer
 zp_temp = lz_zp + 10           ; 2 bytes
 zp_stash = lz_zp + 12          ; 1 byte
 ; 13 bytes total
-
-
 
 ; fetch a byte from the currently selected compressed register data stream
 ; returns byte in A, clobbers Y
@@ -325,8 +320,17 @@ ENDIF
 ; vgm player
 .vgm_start
 
+; local vgm workspace
+.vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
+    skip  8*8
+    ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
+    ;zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
+    ;zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
+    ;zp_window_src   = VGM_ZP + 6    ; window read ptr - index
+    ;zp_window_dst   = VGM_ZP + 7    ; window write ptr - index
 
-
+.vgm_buffers  equb 0
+.vgm_finished equb 0
 
 ; A contains data to be written to sound chip
 ; clobbers X
@@ -506,7 +510,7 @@ zp_block_size = VGM_ZP+2
     ; set the stream buffer (is fixed)
     tax
     clc
-    adc #HI(vgm_stream_buffers)
+    adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
     sta zp_buffer+1
     lda #0
     sta zp_buffer+0
@@ -534,7 +538,6 @@ zp_block_size = VGM_ZP+2
 .temp equb 0
 }
 
-.vgm_finished EQUB 0
 
 
 .vgm_get_data
@@ -579,7 +582,44 @@ zp_block_size = VGM_ZP+2
     rts
 }
 
-; returns non-zero when VGM is finished.
+
+
+;--------------------------------------------------
+; user routines
+;--------------------------------------------------
+
+
+
+;-------------------------------------------
+; vgm_init
+;-------------------------------------------
+; Initialise playback routine
+;  A points to HI byte of 2Kb buffer address
+;  X/Y point to VGM data stream
+;-------------------------------------------
+.vgm_init
+{
+    ; stash the 2kb buffer address
+    sta vgm_buffers
+
+    ; Prepare the data for streaming (passed in X/Y)
+    jsr vgm_stream_mount
+
+    ; clear vgm finished flag
+    lda #0:sta vgm_finished
+
+    ; reset soundchip
+    jsr sn_reset
+    rts
+}
+
+;-------------------------------------------
+; vgm_update
+;-------------------------------------------
+;  call every 50Hz to play music
+;  vgm_init must be called prior to this
+;  returns non-zero when VGM is finished.
+;-------------------------------------------
 .vgm_update
 {
     lda vgm_finished
@@ -591,21 +631,6 @@ zp_block_size = VGM_ZP+2
     rts
 }
 
-
-
-; X/Y point to VGM data stream
-.vgm_init
-{
-    ; Prepare the data for streaming (passed in X/Y)
-    jsr vgm_stream_mount
-
-    ; clear vgm finished flag
-    lda #0:sta vgm_finished
-
-    ; reset soundchip
-    jsr sn_reset
-    rts
-}
 
 
 .vgm_end
