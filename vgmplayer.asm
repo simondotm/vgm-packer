@@ -4,8 +4,9 @@
 
 
 LZ4_FORMAT = FALSE
-USE_HUFFMAN = TRUE
+USE_HUFFMAN = FALSE
 USE_TABLE16 = TRUE ; only needed for huffman
+SPEED_TEST = TRUE   ;  *run Main in MODE2 to see blue line where vgmplayer finishes work
 
 ; Allocate vars in ZP
 .zp_start
@@ -34,7 +35,7 @@ INCLUDE "lib/bbc_utils.h.asm"
 \ *	Utility code - always memory resident
 \ ******************************************************************
 
-ORG &1100
+ORG &3000
 GUARD &7c00
 
 .start
@@ -67,12 +68,27 @@ ALIGN 256
     ldy #hi(vgm_data)
     jsr vgm_init
 
+;    lda #22
+;    jsr &ffee
+;    lda #2
+;    jsr &ffee
+
+
 
     ;jmp mytest
+
     ; loop & update
 .loop
     lda #19:jsr &fff4
+IF SPEED_TEST
+    lda #&03:sta&fe21
+ENDIF
     jsr vgm_update
+IF SPEED_TEST
+    pha
+    lda #&07:sta&fe21
+    pla
+ENDIF
     beq loop
     rts
 }
@@ -909,19 +925,32 @@ ENDIF
 
 .vgm_end
 
+IF SPEED_TEST
+SKIP &1000
+ENDIF
 
 .vgm_data
-IF USE_HUFFMAN
-;INCBIN "data/outruneu.bin.vgc"
-;INCBIN "data/darkside1.bin.vgc"
-;INCBIN "data/androids.bin.lz4"
-INCBIN "data/nd-ui.bin.vgc"
+IF SPEED_TEST
+ IF USE_HUFFMAN
+  INCBIN "data/nd-ui.bin.vgc" ; huffman version
+ ELSE
+  INCBIN "data/nd-ui.bin.lz.vgc" ; lz4 only version
+ ENDIF
 ELSE
-;INCBIN "data/CPCTL10A.bin.vgc"
-INCBIN "data/nd-ui.bin.lz.vgc"
-;INCBIN "data/mongolia.bin.vgc"
+ IF USE_HUFFMAN
+ ; huffman versions needed
+  ;INCBIN "data/outruneu.bin.vgc"
+  ;INCBIN "data/darkside1.bin.vgc"
+  ;INCBIN "data/androids.bin.lz4"
+  INCBIN "data/nd-ui.bin.vgc"
+ ELSE
+ ; lz4 versions needed
+  ;INCBIN "data/CPCTL10A.bin.vgc"
+  INCBIN "data/nd-ui.bin.lz.vgc"
+  ;INCBIN "data/mongolia.bin.vgc"
+  ;INCBIN "data/mongolia.bin.lz4"
+ ENDIF
 ENDIF
-;INCBIN "data/mongolia.bin.lz4"
 
 .testdata
 INCBIN "data/nd-ui.bin.lz.vgc"
@@ -968,9 +997,9 @@ OFFSET5 = OFFSET4 + DLEN4 + 4
 OFFSET6 = OFFSET5 + DLEN5 + 4
 OFFSET7 = OFFSET6 + DLEN6 + 4
 
-STREAM = 7
-OFFSET = OFFSET7
-DLEN = DLEN7
+STREAM = 0
+OFFSET = OFFSET0
+DLEN = DLEN0
 
 
     lda #STREAM
@@ -1039,6 +1068,7 @@ ENDIF
 
 .end 
 lda#65:jsr &ffee
+rts
 jsr &ffe0
 .temp equb 0
 }
@@ -1058,4 +1088,4 @@ PRINT "total vgm player size is", (vgm_buffer_end-vgm_buffer_start) + (decoder_e
 .end
 
 SAVE "Main", start, end, main
-
+PUTBASIC "data/test.txt", "TEST"
