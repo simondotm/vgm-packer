@@ -2,10 +2,10 @@
 \ *	Headers
 \ ******************************************************************
 
-; VGM player uses 11 zero page vars from this address
-VGM_ZP = &80
+
 LZ4_FORMAT = FALSE
-USE_HUFFMAN = FALSE
+USE_HUFFMAN = TRUE
+USE_TABLE16 = TRUE ; only needed for huffman
 
 ; Allocate vars in ZP
 .zp_start
@@ -92,8 +92,10 @@ ALIGN 256
 
 
 ;-------------------------------
-; lz4 decoder
+; workspace vars
 ;-------------------------------
+
+VGM_ZP = &80
 
 ; declare zero page registers used for each compressed stream (they are context switched)
 lz_zp = VGM_ZP + 0
@@ -103,7 +105,7 @@ zp_match_cnt    = lz_zp + 4    ; match count LO/HI
 zp_window_src   = lz_zp + 6    ; window read ptr - index
 zp_window_dst   = lz_zp + 7    ; window write ptr - index
 
-IF USE_HUFFMAN
+IF USE_TABLE16 ;USE_HUFFMAN
 huff_bitbuffer  = lz_zp + 8    ; HUFF_ZP + 0   ; 1 byte
 huff_bitsleft   = lz_zp + 9    ; HUFF_ZP + 1   ; 1 byte
 lz_zp_size = 16  ; number of bytes total workspace for a stream
@@ -111,11 +113,56 @@ ELSE
 lz_zp_size = 8  ; number of bytes total workspace for a stream
 ENDIF
 
-; these variables are not preserved across context switches, can be any Zero page
-zp_buffer = lz_zp + 10          ; 2 bytes, current decode window buffer
-zp_temp = lz_zp + 12           ; 2 bytes
-zp_stash = lz_zp + 14          ; 1 byte
+IF USE_HUFFMAN
 
+HUFF_ZP = &70
+
+; 6502 workspace - assuming max 16-bit codes
+; init
+; (2) table_bitlengths - only referenced once, can perhaps be self modified
+; (2) table_symbols - only referenced once, can perhaps be self modified, implied +16 from table_bitlengths
+; per stream
+; (2) stream read ptr (can replace the one used by lz4, so no extra)
+; (1) bitbuffer
+; (1) bitsleft
+; per symbol fetch
+; (2) code
+; (2) firstCodeWithNumBits
+; (1) startIndexForCurrentNumBits
+; (1) code_size
+; (1) numCodes
+; (1) indexForCurrentNumBits
+; Note that table does not necessarily require MAX_SYMBOLS bytes now, will contain 16 entries plus N symbols. If few symbols occur.
+; Could be an argument for separate tables per stream if compression ratio beats table overhead.
+; we cant interleave the lz4 data because variable bytes needed per register stream per frame
+; therefore we have to maintain 8 huffman contexts also.
+
+; we use the LZ read ptr, since the huffman routine replaces the lz_fetch_byte
+huff_readptr    = zp_stream_src ; HUFF_ZP + 2 ; 2
+
+; these variables are only used during a byte fetch
+huff_code       = HUFF_ZP + 4 ; 2
+huff_firstcode  = HUFF_ZP + 6 ; 2
+huff_startindex = HUFF_ZP + 8 ; 1
+huff_codesize   = HUFF_ZP + 9 ; 1
+huff_index      = HUFF_ZP + 10 ; 2
+huff_numcodes   = HUFF_ZP + 12 ; 1
+huff_temp       = HUFF_ZP + 13 ; 2
+
+ENDIF ; USE_HUFFMAN
+
+
+; VGM player uses 11 zero page vars from this address
+
+
+; these variables are not preserved across context switches, can be any Zero page
+zp_buffer = &6a ; lz_zp + 10          ; 2 bytes, current decode window buffer
+zp_temp = &6c ; lz_zp + 12           ; 2 bytes
+zp_stash = &6e ;lz_zp + 14          ; 1 byte
+
+;-------------------------------
+; lz4 decoder
+;-------------------------------
 
 ; If Huffman is enabled, lz_fetch_byte is declared below.
 IF USE_HUFFMAN == FALSE
@@ -337,59 +384,6 @@ IF USE_HUFFMAN
 ; huffman decoder
 ;-------------------------------
 
-
-
-; 6502 workspace - assuming max 16-bit codes
-; init
-; (2) table_bitlengths - only referenced once, can perhaps be self modified
-; (2) table_symbols - only referenced once, can perhaps be self modified, implied +16 from table_bitlengths
-; per stream
-; (2) stream read ptr (can replace the one used by lz4, so no extra)
-; (1) bitbuffer
-; (1) bitsleft
-; per symbol fetch
-; (2) code
-; (2) firstCodeWithNumBits
-; (1) startIndexForCurrentNumBits
-; (1) code_size
-; (1) numCodes
-; (1) indexForCurrentNumBits
-; Note that table does not necessarily require MAX_SYMBOLS bytes now, will contain 16 entries plus N symbols. If few symbols occur.
-; Could be an argument for separate tables per stream if compression ratio beats table overhead.
-; we cant interleave the lz4 data because variable bytes needed per register stream per frame
-; therefore we have to maintain 8 huffman contexts also.
-
-; we use the LZ read ptr
-huff_readptr    = zp_stream_src ; HUFF_ZP + 2 ; 2
-
-
-HUFF_ZP = &70
-
-
-huff_code       = HUFF_ZP + 4 ; 2
-huff_firstcode  = HUFF_ZP + 6 ; 2
-huff_startindex = HUFF_ZP + 8 ; 1
-huff_codesize   = HUFF_ZP + 9 ; 1
-huff_index      = HUFF_ZP + 10 ; 2
-huff_numcodes   = HUFF_ZP + 12 ; 1
-huff_temp       = HUFF_ZP + 13 ; 2
-
-.length_table
-.symbol_table
-
-
-;.huff_init
-;{
-;    lda # 0
-;    sta huff_bitbuffer  ;bitbuffer = 0
-;    sta huff_bitsleft   ;numbitsbuffered = 0
-;
-;    lda #0
-;    sta huff_readptr + 0
-;    sta huff_readptr + 1
-;    rts
-;}
-
 ; fetch a byte from the currently selected huffman compressed register data stream
 ; returns byte in A, clobbers Y - same as lz_fetch_byte
 .lz_fetch_byte
@@ -459,7 +453,7 @@ huff_temp       = HUFF_ZP + 13 ; 2
 }
 .LOAD_LENGTH_TABLE
 {
-    lda length_table, Y     ; ** MODIFIED **
+    lda &FFFF, Y     ; ** MODIFIED ** See vgm_stream_mount
     sta huff_numcodes
 
     ;# if input code so far is within the range of the first code with the current number of bits, it's a match
@@ -491,7 +485,7 @@ huff_temp       = HUFF_ZP + 13 ; 2
 .LOAD_SYMBOL_TABLE
 {
     ; symbol = symbol_table[code]
-    lda symbol_table, Y     ; ** MODIFIED **
+    lda &FFFF, Y     ; ** MODIFIED ** See vgm_stream_mount
     rts
 }
 .nextbit
@@ -524,13 +518,18 @@ ENDIF ; USE_HUFFMAN
 
 
 .decoder_end
+
+
+.vgm_start
+
+;-------------------------------------------
+; vgm player
 ;-------------------------------------------
 
 
-; vgm player
-.vgm_start
-
 ; local vgm workspace
+
+ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
     skip  8*lz_zp_size
     ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
@@ -539,8 +538,20 @@ ENDIF ; USE_HUFFMAN
     ;zp_window_src   = VGM_ZP + 6    ; window read ptr - index
     ;zp_window_dst   = VGM_ZP + 7    ; window write ptr - index
 
+
+
+; when mounting a VGM file we use these two variables as temporaries
+zp_block_data = zp_buffer+0
+zp_block_size = zp_temp+0
+
+zp_symbol_table_size = zp_stash + 0
+zp_length_table_size = zp_stash + 1
+
 .vgm_buffers  equb 0    ; the HI byte of the address where the buffers are stored
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
+
+
+
 
 ; A contains data to be written to sound chip
 ; clobbers X
@@ -596,12 +607,10 @@ ENDIF
 	rts
 }
 
-; when mounting a VGM file we use these two variables as temporaries
-zp_block_data = VGM_ZP+0
-zp_block_size = VGM_ZP+2
 
 ; on entry zp_block_data points to current block (header)
 ; on exit zp_block_data points to next block
+; Clobbers Y
 .vgm_next_block
 {
     ; read 16-bit block size to zp_block_size
@@ -652,8 +661,6 @@ zp_block_size = VGM_ZP+2
 IF USE_HUFFMAN
     ; first block contains the bitlength and symbol tables
 
-zp_symbol_table_size = zp_temp + 0
-zp_length_table_size = zp_temp + 1
 
     ; stash table sizes for later
     ldy #8
@@ -668,19 +675,19 @@ zp_length_table_size = zp_temp + 1
     lda zp_block_data + 0
     clc
     adc #4+4+1        ; skip lz blocksize, huff block size and symbol count byte
-    sta LOAD_LENGTH_TABLE + 1   ; ** SM ***
+    sta LOAD_LENGTH_TABLE + 1   ; ** SELF MODIFICATION ***
     lda zp_block_data + 1
     adc #0
-    sta LOAD_LENGTH_TABLE + 2   ; ** SM ***
+    sta LOAD_LENGTH_TABLE + 2   ; ** SELF MODIFICATION ***
 
     ; store the address of the symbols table directly in the huff_fetch_byte routine
     lda LOAD_LENGTH_TABLE + 1
     clc
     adc zp_length_table_size
-    sta LOAD_SYMBOL_TABLE + 1   ; ** SM ***
+    sta LOAD_SYMBOL_TABLE + 1   ; ** SELF MODIFICATION ***
     lda LOAD_LENGTH_TABLE + 2
     adc #0
-    sta LOAD_SYMBOL_TABLE + 2   ; ** SM ***
+    sta LOAD_SYMBOL_TABLE + 2   ; ** SELF MODIFICATION ***
 
     ; skip to next block
     jsr vgm_next_block
@@ -712,7 +719,7 @@ ENDIF ; USE_HUFFMAN
     sta vgm_streams + 5, x  ; match cnt 
     sta vgm_streams + 6, x  ; window src ptr 
     sta vgm_streams + 7, x  ; window dst ptr 
-IF USE_HUFFMAN
+IF USE_TABLE16 ;USE_HUFFMAN
     sta vgm_streams + 8, x  ; huff bitbuffer
     sta vgm_streams + 9, x  ; huff bitsleft
 ENDIF
@@ -784,7 +791,7 @@ ENDIF
     asl a
     asl a
     asl a
-IF USE_HUFFMAN
+IF USE_TABLE16 ;USE_HUFFMAN
     asl a   ; *16 = lz_zp_size
 ENDIF
     sta temp
