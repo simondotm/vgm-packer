@@ -67,6 +67,8 @@ ALIGN 256
     ldy #hi(vgm_data)
     jsr vgm_init
 
+
+    ;jmp mytest
     ; loop & update
 .loop
     lda #19:jsr &fff4
@@ -393,6 +395,7 @@ huff_temp       = HUFF_ZP + 13 ; 2
 .lz_fetch_byte
 .huff_fetch_byte
 {
+    lda #0
     sta huff_code + 0       ;code = 0                            # word
     sta huff_code + 1
     sta huff_codesize ;code_size = 0                       # byte
@@ -429,7 +432,7 @@ huff_temp       = HUFF_ZP + 13 ; 2
     lda #8
     sta huff_bitsleft
     inc huff_readptr + 0
-    beq got_bits
+    bne got_bits
     inc huff_readptr + 1
 .got_bits
 
@@ -445,8 +448,8 @@ huff_temp       = HUFF_ZP + 13 ; 2
     ; build code
     dec huff_bitsleft
     asl huff_bitbuffer           ; bit7 -> C
-    asl huff_code + 0       ; C -> bit0, bit7 -> C
-    rol huff_code + 1       ; C -> bit8
+    rol huff_code + 0       ; C -> bit0, bit7 -> C
+    rol huff_code + 1       ; C -> bit8, bit15 -> C
     inc huff_codesize
 
     ;# how many canonical codes have this many bits
@@ -463,11 +466,11 @@ huff_temp       = HUFF_ZP + 13 ; 2
     ;indexForCurrentNumBits = code - firstCodeWithNumBits
 
     sec
-    lda huff_firstcode + 0
-    sbc huff_code + 0
+    lda huff_code + 0
+    sbc huff_firstcode + 0
     sta huff_index + 0
-    lda huff_firstcode + 1
-    sbc huff_code + 1
+    lda huff_code + 1
+    sbc huff_firstcode + 1
     sta huff_index + 1
 
     ;if indexForCurrentNumBits < numCodes:
@@ -649,8 +652,8 @@ zp_block_size = VGM_ZP+2
 IF USE_HUFFMAN
     ; first block contains the bitlength and symbol tables
 
-zp_symbol_table_size = zp_stream_src + 0
-zp_length_table_size = zp_stream_src + 1
+zp_symbol_table_size = zp_temp + 0
+zp_length_table_size = zp_temp + 1
 
     ; stash table sizes for later
     ldy #8
@@ -658,25 +661,26 @@ zp_length_table_size = zp_stream_src + 1
     sta zp_symbol_table_size    
     iny
     lda (zp_block_data),Y   ; bitlength table size
-    sta zp_length_table_size    ;; table size + 6 will never be > 256
+    sta zp_length_table_size    
+    inc zp_length_table_size    ; compensate for the first byte (range is 0-nbits inclusive), will never wrap a byte
 
     ; store the address of the bitlengths table directly in the huff_fetch_byte routine
     lda zp_block_data + 0
     clc
     adc #4+4+1        ; skip lz blocksize, huff block size and symbol count byte
-    sta LOAD_LENGTH_TABLE + 0
-    lda zp_block_data + 0
+    sta LOAD_LENGTH_TABLE + 1   ; ** SM ***
+    lda zp_block_data + 1
     adc #0
-    sta LOAD_LENGTH_TABLE + 1
+    sta LOAD_LENGTH_TABLE + 2   ; ** SM ***
 
     ; store the address of the symbols table directly in the huff_fetch_byte routine
-    lda LOAD_LENGTH_TABLE + 0
+    lda LOAD_LENGTH_TABLE + 1
     clc
     adc zp_length_table_size
-    sta LOAD_SYMBOL_TABLE + 0
-    lda LOAD_LENGTH_TABLE + 1
+    sta LOAD_SYMBOL_TABLE + 1   ; ** SM ***
+    lda LOAD_LENGTH_TABLE + 2
     adc #0
-    sta LOAD_SYMBOL_TABLE + 1
+    sta LOAD_SYMBOL_TABLE + 2   ; ** SM ***
 
     ; skip to next block
     jsr vgm_next_block
@@ -728,7 +732,7 @@ ENDIF
 
 
 ; Select a register data stream where
-;  X is stream id (0-7) * 8
+;  X is stream id (0-7) * lz_zp_size
 ;  clobbers A,Y
 ;  no return value
 .vgm_load_register_context
@@ -745,7 +749,7 @@ ENDIF
 }
 
 ; Save the current register stream context
-;  X is stream id (0-7) * 8
+;  X is stream id (0-7) * lz_zp_size
 ;  clobbers A,Y
 ;  no return value
 .vgm_save_register_context
@@ -781,7 +785,7 @@ ENDIF
     asl a
     asl a
 IF USE_HUFFMAN
-    asl a
+    asl a   ; *16 = lz_zp_size
 ENDIF
     sta temp
     tax
@@ -822,7 +826,7 @@ ENDIF
     ora #&80 + (3<<5):jsr sn_write
 
 .no_change3
-
+    ;rts    
     ; Channel 0 tone
     lda #0:jsr vgm_get_register_data:ora #&80 + (0<<5):jsr sn_write
     lda #0:jsr vgm_get_register_data:jsr sn_write
@@ -901,15 +905,136 @@ ENDIF
 
 .vgm_data
 IF USE_HUFFMAN
-INCBIN "data/outruneu.bin.vgc"
+;INCBIN "data/outruneu.bin.vgc"
 ;INCBIN "data/darkside1.bin.vgc"
 ;INCBIN "data/androids.bin.lz4"
+INCBIN "data/nd-ui.bin.vgc"
 ELSE
 ;INCBIN "data/CPCTL10A.bin.vgc"
-INCBIN "data/mongolia.bin.vgc"
+INCBIN "data/nd-ui.bin.lz.vgc"
+;INCBIN "data/mongolia.bin.vgc"
 ENDIF
-;INCBIN "data/nd-ui.bin.lz4"
 ;INCBIN "data/mongolia.bin.lz4"
+
+.testdata
+INCBIN "data/nd-ui.bin.lz.vgc"
+
+.hex equs "0123456789ABCDEF"
+.drawnum
+{
+    pha
+    and #&f0
+    lsr a:lsr a:lsr a:lsr a
+    tax
+    lda hex, X
+    jsr &ffee
+    pla
+    and #&0f
+    tax
+    lda hex, X
+    jsr &ffee
+
+    rts
+}
+
+
+
+ALIGN 256
+.mytest
+{
+START = 7 + testdata
+DLEN0 = &3f2
+DLEN1 = &3d5
+DLEN2 = &457
+DLEN3 = &48
+DLEN4 = &1ea
+DLEN5 = &18
+DLEN6 = &5d
+DLEN7 = &b0
+
+OFFSET0 = START + 4
+OFFSET1 = OFFSET0 + DLEN0 + 4
+OFFSET2 = OFFSET1 + DLEN1 + 4
+OFFSET3 = OFFSET2 + DLEN2 + 4
+OFFSET4 = OFFSET3 + DLEN3 + 4
+OFFSET5 = OFFSET4 + DLEN4 + 4
+OFFSET6 = OFFSET5 + DLEN5 + 4
+OFFSET7 = OFFSET6 + DLEN6 + 4
+
+STREAM = 7
+OFFSET = OFFSET7
+DLEN = DLEN7
+
+
+    lda #STREAM
+   ; set the stream buffer (is fixed)
+    tax
+    clc
+    adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
+    sta zp_buffer+1
+    lda #0
+    sta zp_buffer+0
+    txa
+    
+    ; calculate the stream buffer context
+    asl a
+    asl a
+    asl a
+IF USE_HUFFMAN
+    asl a
+ENDIF
+    sta temp
+    tax
+
+    ; since we have 8 separately compressed register streams
+    ; we have to load the required decoder context to ZP
+    jsr vgm_load_register_context   ; TODO:inline
+
+
+    lda #lo(OFFSET)
+    sta &90
+    lda #hi(OFFSET)
+    sta &91
+
+    lda #lo(DLEN)
+    sta &92
+    lda #hi(DLEN)
+    sta &93
+
+
+    .loop
+    jsr lz_fetch_byte:sta &94
+
+    ldy #0
+    lda (&90),Y
+    cmp &94
+    beq ok
+
+    lda &90:jsr drawnum
+    lda #32:jsr &ffee
+    lda #32:jsr &ffee
+.ok
+
+    inc &90
+    bne skip
+    inc &91
+.skip
+
+    dec &92
+    bne skip2
+    lda &93
+    beq end
+    dec &93
+.skip2
+
+    ;jsr &ffe0
+    jmp loop
+
+.end 
+lda#65:jsr &ffee
+jsr &ffe0
+.temp equb 0
+}
 
 
 PRINT ~vgm_data
