@@ -400,6 +400,14 @@ IF USE_HUFFMAN
 ; huffman decoder
 ;-------------------------------
 
+; TODO: Optimize with a peek buffer.
+; 70-90% of codes are 7 bits or less. At 8 bits the % is higher.
+; Peek buffer translates to two lookups and no loops.
+; http://cbloomrants.blogspot.com/2010/08/08-11-10-huffman-arithmetic-equivalence.html
+; 7 bits peek would require 2x 128 byte tables (256 bytes total extra to data stream).
+
+
+
 ; fetch a byte from the currently selected huffman compressed register data stream
 ; returns byte in A, clobbers Y - same as lz_fetch_byte
 .lz_fetch_byte
