@@ -1,6 +1,8 @@
-\ ******************************************************************
-\ *	Headers
-\ ******************************************************************
+;******************************************************************
+; 6502 BBC Micro Compressed VGM (VGC) Music Player
+; By Simon Morris
+; https://github.com/simondotm/vgm-packer
+;******************************************************************
 
 
 LZ4_FORMAT = FALSE
@@ -825,8 +827,11 @@ ENDIF
     and #&0f
     ldx vgm_temp
     ora vgm_register_headers,x
+    ; check if it's a tone3 skip command (&ef) before we play it
+    cmp #&ef
+    beq skip_tone3
     jsr sn_write ; clobbers X
-
+.skip_tone3
     ; get run length (top 4-bits + 1)
     tya
     lsr a
@@ -1011,12 +1016,13 @@ ENDIF
 
 
 .vgm_data
-;INCBIN "data/mongolia.vgm.vgc"
-;INCBIN "data/things.vgm.vgc"
-;INCBIN "data/lethal7.vgm.vgc"
-;INCBIN "data/CPCTL10A.vgm.vgc"
-;INCBIN "data/bestpart.vgm.vgc"
-INCBIN "data/tale7.vgm.vgc"
+INCBIN "testvgm/bbcapple.vgm.vgc"
+;INCBIN "testvgm/mongolia.vgm.vgc"
+;INCBIN "testvgm/things.vgm.vgc"
+;INCBIN "testvgm/lethal7.vgm.vgc"
+;INCBIN "testvgm/CPCTL10A.vgm.vgc"
+;INCBIN "testvgm/bestpart.vgm.vgc"
+;INCBIN "testvgm/tale7.vgm.vgc"
 
 IF TEST_DATA
 .testdata
