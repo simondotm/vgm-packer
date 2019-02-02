@@ -1176,4 +1176,4 @@ PRINT "total vgm player size is", (vgm_buffer_end-vgm_buffer_start) + (decoder_e
 .end
 
 SAVE "Main", start, end, main
-PUTBASIC "data/test.txt", "TEST"
+
