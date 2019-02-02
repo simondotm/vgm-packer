@@ -5,8 +5,13 @@
 
 LZ4_FORMAT = FALSE
 USE_HUFFMAN = FALSE
+
 USE_TABLE16 = TRUE ; only needed for huffman
-SPEED_TEST = TRUE   ;  *run Main in MODE2 to see blue line where vgmplayer finishes work
+USE_RLE = TRUE
+
+
+SPEED_TEST = FALSE   ;  *run Main in MODE2 to see blue line where vgmplayer finishes work
+TEST_DATA = FALSE
 
 ; Allocate vars in ZP
 .zp_start
@@ -74,22 +79,31 @@ ALIGN 256
 ;    jsr &ffee
 
 
-
-    ;jmp mytest
+IF TEST_DATA
+    jmp mytest
+ENDIF
 
     ; loop & update
+    sei
 .loop
-    lda #19:jsr &fff4
-IF SPEED_TEST
-    lda #&03:sta&fe21
+    ;lda #19:jsr &fff4
+
+; set to false to playback at full speed for performance testing
+IF TRUE 
+    lda #2
+    .vsync1
+    bit &FE4D
+    beq vsync1
+    sta &FE4D
 ENDIF
+
+    lda #&03:sta&fe21
     jsr vgm_update
-IF SPEED_TEST
     pha
     lda #&07:sta&fe21
     pla
-ENDIF
     beq loop
+    cli
     rts
 }
 
@@ -574,14 +588,30 @@ zp_length_table_size = zp_stash + 1
 .vgm_buffers  equb 0    ; the HI byte of the address where the buffers are stored
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 
+IF USE_RLE
 
+; %1cctdddd 
+.vgm_register_headers
+    EQUB &80 + (0<<5)   ; Tone 0
+    EQUB &80 + (1<<5)   ; Tone 1
+    EQUB &80 + (2<<5)   ; Tone 2
+    EQUB &80 + (3<<5)   ; Tone 3
+    EQUB &90 + (0<<5)   ; Volume 0
+    EQUB &90 + (1<<5)   ; Volume 1
+    EQUB &90 + (2<<5)   ; Volume 2
+    EQUB &90 + (3<<5)   ; Volume 3
+
+; 8 counters for VGM register update counters (RLE)
+.vgm_register_counts
+    SKIP 8
+ENDIF
 
 
 ; A contains data to be written to sound chip
-; clobbers X
+; clobbers X, A is non-zero on exit
 .sn_write
 {
-    sei
+    ;sei
     ldx #255
     stx &fe43
     sta &fe41
@@ -590,7 +620,7 @@ zp_length_table_size = zp_stash + 1
     lda &fe40
     ora #8
     sta &fe40
-    cli
+    ;cli
     rts ; 21 bytes
 }
 
@@ -758,6 +788,19 @@ ENDIF
     cpx #8*lz_zp_size
     bne block_loop
 
+
+    ; clear vgm finished flag
+    lda #0:sta vgm_finished
+
+IF USE_RLE
+    ldx #7
+    lda #1
+.cloop
+    sta vgm_register_counts, X
+    dex
+    bpl cloop
+ENDIF
+
     rts
 }
 
@@ -795,6 +838,8 @@ ENDIF
     bne loop
     rts    
 }
+
+.vgm_temp equb 0
 
 ;----------------------------------------------------------------------
 ; fetch register data byte from register stream selected in A
@@ -836,17 +881,98 @@ ENDIF
 .temp equb 0
 }
 
+IF USE_RLE
+
+; A is register to update
+; on exit:
+;    C is set if an update happened and Y contains last register value
+;    C is clear if no updated happened and Y is preserved
+;    X contains register (0-7)
+
+.vgm_update_register1
+{
+    sta vgm_temp
+    tax
+    clc
+    dec vgm_register_counts,x ; no effect on C
+    bne skip_register_update
+
+    ; decode a byte & send to psg
+    jsr vgm_get_register_data
+    tay
+    and #&0f
+    ldx vgm_temp
+    ora vgm_register_headers,x
+    jsr sn_write ; clobbers X
+
+    ; get run length (top 4-bits + 1)
+    tya
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    clc
+    adc #1
+    ldx vgm_temp
+    sta vgm_register_counts,x
+    sec
+.skip_register_update
+    rts
+}
+
+.vgm_update_register2
+{
+    jsr vgm_update_register1
+    bcc skip_register_update
+
+    ; decode 2nd byte and send to psg as (DATA)
+    txa
+    jsr vgm_get_register_data
+    jsr sn_write ; clobbers X
+.skip_register_update
+    rts
+}
+ENDIF
 
 
 .vgm_get_data
 {
     ; SN76489 data register format is %1cctdddd where cc=channel, t=0=tone, t=1=volume, dddd=data
 
-    ; Get Channel 3 tone first
+IF USE_RLE
+    ; Get Channel 3 tone first because that contains the EOF marker
+    lda vgm_finished
+    bne exit
+
+.update
+    lda#3:jsr vgm_update_register1  ; Tone3
+    bcc more_updates
+    cpy #&08     ; EOF marker? (0x08 is an invalid tone 3 value)
+    bne more_updates
+    jsr sn_reset ; returns non-zero in A
+    lda #&ff
+    sta vgm_finished
+.exit
+    rts
+
+.more_updates
+
+
+    lda#7:jsr vgm_update_register1  ; Volume3
+IF TRUE    
+    lda#0:jsr vgm_update_register2  ; Tone0
+    lda#1:jsr vgm_update_register2  ; Tone1
+    lda#2:jsr vgm_update_register2  ; Tone2
+    lda#4:jsr vgm_update_register1  ; Volume0
+    lda#5:jsr vgm_update_register1  ; Volume1
+    lda#6:jsr vgm_update_register1  ; Volume2
+ENDIF
+ELSE
     ; If it is 255 we have reached the EOF marker
     lda #3:jsr vgm_get_register_data
+
     cmp #&ff:bne no_eof
-    jsr sn_reset
+    jsr sn_reset ; returns non-zero in A
     sta vgm_finished
     rts
 .no_eof
@@ -876,7 +1002,7 @@ ENDIF
     lda #5:jsr vgm_get_register_data:ora #&90 + (1<<5):jsr sn_write
     lda #6:jsr vgm_get_register_data:ora #&90 + (2<<5):jsr sn_write
     lda #7:jsr vgm_get_register_data:ora #&90 + (3<<5):jsr sn_write
-
+ENDIF
     rts
 }
 
@@ -902,9 +1028,6 @@ ENDIF
 
     ; Prepare the data for streaming (passed in X/Y)
     jsr vgm_stream_mount
-
-    ; clear vgm finished flag
-    lda #0:sta vgm_finished
 
     ; reset soundchip
     jsr sn_reset
@@ -932,7 +1055,7 @@ ENDIF
 
 
 .vgm_end
-
+SKIP &1000
 IF SPEED_TEST
 SKIP &1000
 ENDIF
@@ -950,18 +1073,26 @@ ELSE
   ;INCBIN "data/outruneu.bin.vgc"
   ;INCBIN "data/darkside1.bin.vgc"
   ;INCBIN "data/androids.bin.lz4"
-  INCBIN "data/nd-ui.bin.vgc"
+  ;INCBIN "data/nd-ui.bin.vgc"
+  ;INCBIN "data/androids.vgm.vgc" ; RLE
+  ;INCBIN "data/mongolia.vgm.vgc" ; RLE
+  INCBIN "data/nd-ui.vgm.vgc" ; RLE
+ ;INCBIN "data/nd-ui.bin.vgc" ; No RLE
+
  ELSE
  ; lz4 versions needed
   ;INCBIN "data/CPCTL10A.bin.vgc"
-  INCBIN "data/nd-ui.bin.lz.vgc"
+ ; INCBIN "data/nd-ui.bin.lz.vgc" ; LZ4 no RLE no HUFFMAN
+  ;INCBIN "data/nd-ui.vgm.vgc" ; RLE
+  INCBIN "data/mongolia.vgm.vgc"
   ;INCBIN "data/mongolia.bin.vgc"
   ;INCBIN "data/mongolia.bin.lz4"
  ENDIF
 ENDIF
 
+IF TEST_DATA
 .testdata
-INCBIN "data/nd-ui.bin.lz.vgc"
+INCBIN "data/nd-ui.vgm.3.part"
 
 .hex equs "0123456789ABCDEF"
 .drawnum
@@ -986,17 +1117,26 @@ INCBIN "data/nd-ui.bin.lz.vgc"
 ALIGN 256
 .mytest
 {
-START = 7 + testdata
-DLEN0 = &3f2
-DLEN1 = &3d5
-DLEN2 = &457
-DLEN3 = &48
-DLEN4 = &1ea
-DLEN5 = &18
-DLEN6 = &5d
-DLEN7 = &b0
+START = testdata
+;DLEN0 = &3f2
+;DLEN1 = &3d5
+;DLEN2 = &457
+;DLEN3 = &48
+;DLEN4 = &1ea
+;DLEN5 = &18
+;DLEN6 = &5d
+;DLEN7 = &b0
 
-OFFSET0 = START + 4
+DLEN0=&162
+DLEN1=&192
+DLEN2=&21b
+DLEN3=&2f
+DLEN4=&18a
+DLEN5=&10
+DLEN6=&4f
+DLEN7=&6e
+
+OFFSET0 = START ; + 4 + 7
 OFFSET1 = OFFSET0 + DLEN0 + 4
 OFFSET2 = OFFSET1 + DLEN1 + 4
 OFFSET3 = OFFSET2 + DLEN2 + 4
@@ -1005,9 +1145,9 @@ OFFSET5 = OFFSET4 + DLEN4 + 4
 OFFSET6 = OFFSET5 + DLEN5 + 4
 OFFSET7 = OFFSET6 + DLEN6 + 4
 
-STREAM = 0
-OFFSET = OFFSET0
-DLEN = DLEN0
+STREAM = 3
+OFFSET = OFFSET3
+DLEN = DLEN3
 
 
     lda #STREAM
@@ -1035,9 +1175,9 @@ ENDIF
     jsr vgm_load_register_context   ; TODO:inline
 
 
-    lda #lo(OFFSET)
+    lda #lo(testdata)
     sta &90
-    lda #hi(OFFSET)
+    lda #hi(testdata)
     sta &91
 
     lda #lo(DLEN)
@@ -1047,14 +1187,20 @@ ENDIF
 
 
     .loop
-    jsr lz_fetch_byte:sta &94
+    ;jsr lz_fetch_byte:sta &94
+    jsr vgm_update_register1:sta &94
+
 
     ldy #0
     lda (&90),Y
     cmp &94
     beq ok
 
+    lda &91:jsr drawnum
     lda &90:jsr drawnum
+    lda #32:jsr &ffee
+
+    lda &94:jsr drawnum
     lda #32:jsr &ffee
     lda #32:jsr &ffee
 .ok
@@ -1080,7 +1226,7 @@ rts
 jsr &ffe0
 .temp equb 0
 }
-
+ENDIF
 
 PRINT ~vgm_data
 
