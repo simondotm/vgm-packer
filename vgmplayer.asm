@@ -4,7 +4,7 @@
 
 
 LZ4_FORMAT = FALSE
-USE_HUFFMAN = FALSE
+USE_HUFFMAN = TRUE
 
 USE_TABLE16 = TRUE ; only needed for huffman
 USE_RLE = TRUE
@@ -40,7 +40,7 @@ INCLUDE "lib/bbc_utils.h.asm"
 \ *	Utility code - always memory resident
 \ ******************************************************************
 
-ORG &3000
+ORG &1100
 GUARD &7c00
 
 .start
@@ -135,7 +135,7 @@ zp_match_cnt    = lz_zp + 4    ; match count LO/HI
 zp_window_src   = lz_zp + 6    ; window read ptr - index
 zp_window_dst   = lz_zp + 7    ; window write ptr - index
 
-IF USE_TABLE16 ;USE_HUFFMAN
+IF USE_TABLE16 
 huff_bitbuffer  = lz_zp + 8    ; HUFF_ZP + 0   ; 1 byte
 huff_bitsleft   = lz_zp + 9    ; HUFF_ZP + 1   ; 1 byte
 lz_zp_size = 16  ; number of bytes total workspace for a stream
@@ -194,21 +194,7 @@ zp_stash = &6e ;lz_zp + 14          ; 1 byte
 ; lz4 decoder
 ;-------------------------------
 
-; If Huffman is enabled, lz_fetch_byte is declared below.
-IF USE_HUFFMAN == FALSE
-; fetch a byte from the currently selected compressed register data stream
-; returns byte in A, clobbers Y
-.lz_fetch_byte
-{
-    ldy #0
-    lda (zp_stream_src),y
-    inc zp_stream_src+0
-    bne ok
-    inc zp_stream_src+1
-.ok
-    rts
-}
-ENDIF
+
 
 ; fetch a byte from the current decode buffer at the current read ptr offset
 ; returns byte in A, clobbers Y
@@ -408,6 +394,27 @@ ENDIF
 
 
 
+
+; fetch a byte from the currently selected compressed register data stream
+; either huffman encoded or plain data
+; returns byte in A, clobbers Y
+.lz_fetch_byte
+{
+IF USE_HUFFMAN == TRUE
+    bit vgm_flags
+    bmi huff_fetch_byte ; if bit7 set its a huffman stream
+ENDIF
+    ; otherwise plain LZ4 byte fetch
+    ldy #0
+    lda (zp_stream_src),y
+    inc zp_stream_src+0
+    bne ok
+    inc zp_stream_src+1
+.ok
+    rts
+}
+
+
 IF USE_HUFFMAN
 
 ;-------------------------------
@@ -422,9 +429,6 @@ IF USE_HUFFMAN
 
 
 
-; fetch a byte from the currently selected huffman compressed register data stream
-; returns byte in A, clobbers Y - same as lz_fetch_byte
-.lz_fetch_byte
 .huff_fetch_byte
 {
     lda #0
@@ -587,6 +591,7 @@ zp_length_table_size = zp_stash + 1
 
 .vgm_buffers  equb 0    ; the HI byte of the address where the buffers are stored
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
+.vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
 
 IF USE_RLE
 
@@ -691,7 +696,7 @@ ENDIF
 }
 
 
-
+; On entry X/Y point to Lo/Hi address of the vgc data
 .vgm_stream_mount
 {
 
@@ -702,19 +707,34 @@ ENDIF
     ;  Contains 8 blocks
     ; Obviously since this is an 8-bit CPU no files or blocks can be > 64Kb in size
 
+    ; our streams have a different magic number to LZ4
+    ; [56 47 43 XX]
+    ; where XX:
+    ; bit 6 - LZ 8 bit (0) or 16 bit (1) [unsupported atm]
+    ; bit 7 - Huffman (1) or no huffman (0)
+
+    stx zp_block_data+0
+    sty zp_block_data+1
+
+    ; get the stream flags
+    ldy #3
+    lda (zp_block_data), y
+    sta vgm_flags
+
     ; Skip frame header, and move to first block
-    txa
+    lda zp_block_data+0
     clc
     adc #7
     sta zp_block_data+0
-    tya
+    lda zp_block_data+1
     adc #0
     sta zp_block_data+1
 
 
 IF USE_HUFFMAN
     ; first block contains the bitlength and symbol tables
-
+    bit vgm_flags
+    bpl skip_hufftable
 
     ; stash table sizes for later
     ldy #8
@@ -746,7 +766,7 @@ IF USE_HUFFMAN
     ; skip to next block
     jsr vgm_next_block
 
-
+.skip_hufftable
 ENDIF ; USE_HUFFMAN
 
 
@@ -1055,40 +1075,18 @@ ENDIF
 
 
 .vgm_end
-SKIP &1000
-IF SPEED_TEST
-SKIP &1000
-ENDIF
+;SKIP &1000
+;IF SPEED_TEST
+;SKIP &1000
+;ENDIF
 
 .vgm_data
-IF SPEED_TEST
- IF USE_HUFFMAN
-  INCBIN "data/nd-ui.bin.vgc" ; huffman version
- ELSE
-  INCBIN "data/nd-ui.bin.lz.vgc" ; lz4 only version
- ENDIF
-ELSE
- IF USE_HUFFMAN
- ; huffman versions needed
-  ;INCBIN "data/outruneu.bin.vgc"
-  ;INCBIN "data/darkside1.bin.vgc"
-  ;INCBIN "data/androids.bin.lz4"
-  ;INCBIN "data/nd-ui.bin.vgc"
-  ;INCBIN "data/androids.vgm.vgc" ; RLE
-  ;INCBIN "data/mongolia.vgm.vgc" ; RLE
-  INCBIN "data/nd-ui.vgm.vgc" ; RLE
- ;INCBIN "data/nd-ui.bin.vgc" ; No RLE
-
- ELSE
- ; lz4 versions needed
-  ;INCBIN "data/CPCTL10A.bin.vgc"
- ; INCBIN "data/nd-ui.bin.lz.vgc" ; LZ4 no RLE no HUFFMAN
-  ;INCBIN "data/nd-ui.vgm.vgc" ; RLE
-  INCBIN "data/mongolia.vgm.vgc"
-  ;INCBIN "data/mongolia.bin.vgc"
-  ;INCBIN "data/mongolia.bin.lz4"
- ENDIF
-ENDIF
+;INCBIN "data/mongolia.vgm.vgc"
+;INCBIN "data/things.vgm.vgc"
+;INCBIN "data/lethal7.vgm.vgc"
+;INCBIN "data/CPCTL10A.vgm.vgc"
+;INCBIN "data/bestpart.vgm.vgc"
+INCBIN "data/tale7.vgm.vgc"
 
 IF TEST_DATA
 .testdata
