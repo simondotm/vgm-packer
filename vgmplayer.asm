@@ -7,7 +7,6 @@ LZ4_FORMAT = FALSE
 USE_HUFFMAN = TRUE
 
 USE_TABLE16 = TRUE ; only needed for huffman
-USE_RLE = TRUE
 
 
 SPEED_TEST = FALSE   ;  *run Main in MODE2 to see blue line where vgmplayer finishes work
@@ -46,72 +45,6 @@ GUARD &7c00
 .start
 
 ;----------------------------
-
-.vgm_buffer_start
-
-; reserve space for the vgm decode buffers (8x256 = 2Kb)
-ALIGN 256
-.vgm_stream_buffers
-    skip 256
-    skip 256
-    skip 256
-    skip 256
-    skip 256
-    skip 256
-    skip 256
-    skip 256
-
-
-.vgm_buffer_end
-
-
-.main
-{
-    ; initialize the vgm player with a vgc data stream
-    lda #hi(vgm_stream_buffers)
-    ldx #lo(vgm_data)
-    ldy #hi(vgm_data)
-    jsr vgm_init
-
-;    lda #22
-;    jsr &ffee
-;    lda #2
-;    jsr &ffee
-
-
-IF TEST_DATA
-    jmp mytest
-ENDIF
-
-    ; loop & update
-    sei
-.loop
-    ;lda #19:jsr &fff4
-
-; set to false to playback at full speed for performance testing
-IF TRUE 
-    lda #2
-    .vsync1
-    bit &FE4D
-    beq vsync1
-    sta &FE4D
-ENDIF
-
-    lda #&03:sta&fe21
-    jsr vgm_update
-    pha
-    lda #&07:sta&fe21
-    pla
-    beq loop
-    cli
-    rts
-}
-
-
-;INCLUDE "lib/swr.asm"
-;INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debugging mainly
-;INCLUDE "lib/disksys.asm"
-
 
 
 ;---------------------------------------------------------------
@@ -593,8 +526,12 @@ zp_length_table_size = zp_stash + 1
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 .vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
 
-IF USE_RLE
+; 8 counters for VGM register update counters (RLE)
+.vgm_register_counts
+    SKIP 8
 
+
+; Table of SN76489 flags for the 8 LATCH/DATA registers
 ; %1cctdddd 
 .vgm_register_headers
     EQUB &80 + (0<<5)   ; Tone 0
@@ -606,17 +543,12 @@ IF USE_RLE
     EQUB &90 + (2<<5)   ; Volume 2
     EQUB &90 + (3<<5)   ; Volume 3
 
-; 8 counters for VGM register update counters (RLE)
-.vgm_register_counts
-    SKIP 8
-ENDIF
 
-
+; Write data to SN76489 sound chip
 ; A contains data to be written to sound chip
 ; clobbers X, A is non-zero on exit
 .sn_write
 {
-    ;sei
     ldx #255
     stx &fe43
     sta &fe41
@@ -625,37 +557,10 @@ ENDIF
     lda &fe40
     ora #8
     sta &fe40
-    ;cli
     rts ; 21 bytes
 }
 
-IF FALSE
-; A contains data to be written to sound chip
-; clobbers Y
-.sn_write2
-{
-	sei					; **SELF-MODIFIED CODE**
-
-	ldy #255
-	sty &fe43
-	
-	sta &fe41
-	lda #0
-	sta &fe40
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	lda #8
-	sta &fe40
-
-	cli					; **SELF-MODIFIED CODE**
-	rts
-}
-ENDIF
-
+; Reset SN76489 sound chip to a default (silent) state
 .sn_reset
 {
 	\\ Zero volume on all channels
@@ -666,7 +571,7 @@ ENDIF
 	rts
 }
 
-
+; VGC file parsing - Skip to the next block. 
 ; on entry zp_block_data points to current block (header)
 ; on exit zp_block_data points to next block
 ; Clobbers Y
@@ -695,19 +600,18 @@ ENDIF
     rts
 }
 
-
+; VGC file parsing - Initialise the system for the provided in-memory VGC data stream.
 ; On entry X/Y point to Lo/Hi address of the vgc data
 .vgm_stream_mount
 {
-
     ; parse data stream
-    ; we use LZ4 frame & block format for convenience
+    ; VGC broadly uses LZ4 frame & block formats for convenience
     ; however there are assumptions for format:
     ;  Magic number[4], Flags[1], MaxBlockSize[1], Header checksum[1]
     ;  Contains 8 blocks
     ; Obviously since this is an 8-bit CPU no files or blocks can be > 64Kb in size
 
-    ; our streams have a different magic number to LZ4
+    ; VGC streams have a different magic number to LZ4
     ; [56 47 43 XX]
     ; where XX:
     ; bit 6 - LZ 8 bit (0) or 16 bit (1) [unsupported atm]
@@ -716,7 +620,7 @@ ENDIF
     stx zp_block_data+0
     sty zp_block_data+1
 
-    ; get the stream flags
+    ; get the stream flags (huffman/8 or 16 bit offsets)
     ldy #3
     lda (zp_block_data), y
     sta vgm_flags
@@ -808,18 +712,16 @@ ENDIF
     cpx #8*lz_zp_size
     bne block_loop
 
-
     ; clear vgm finished flag
     lda #0:sta vgm_finished
 
-IF USE_RLE
+    ; setup RLE tables
     ldx #7
     lda #1
 .cloop
     sta vgm_register_counts, X
     dex
     bpl cloop
-ENDIF
 
     rts
 }
@@ -863,11 +765,12 @@ ENDIF
 
 ;----------------------------------------------------------------------
 ; fetch register data byte from register stream selected in A
+; This byte will be LZ4 encoded
 ;  A is register id (0-7)
 ;  clobbers X,Y
 .vgm_get_register_data
 {
-    ; set the stream buffer (is fixed)
+    ; set the LZ4 decoder stream workspace buffer (initialised by vgm_stream_mount)
     tax
     clc
     adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
@@ -898,11 +801,10 @@ ENDIF
     jsr vgm_save_register_context   ; TODO:inline
     pla
     rts
-.temp equb 0
+.temp equb 0 ; TODO:shared temp?
 }
 
-IF USE_RLE
-
+; Fetch 1 register data byte from the encoded stream and send to sound chip (volumes & tone3)
 ; A is register to update
 ; on exit:
 ;    C is set if an update happened and Y contains last register value
@@ -940,6 +842,8 @@ IF USE_RLE
     rts
 }
 
+; Fetch 2 register bytes (LATCH+DATA) from the encoded stream and send to sound chip (tone0, tone1, tone2)
+; Same parameters as vgm_update_register1
 .vgm_update_register2
 {
     jsr vgm_update_register1
@@ -950,79 +854,6 @@ IF USE_RLE
     jsr vgm_get_register_data
     jsr sn_write ; clobbers X
 .skip_register_update
-    rts
-}
-ENDIF
-
-
-.vgm_get_data
-{
-    ; SN76489 data register format is %1cctdddd where cc=channel, t=0=tone, t=1=volume, dddd=data
-
-IF USE_RLE
-    ; Get Channel 3 tone first because that contains the EOF marker
-    lda vgm_finished
-    bne exit
-
-.update
-    lda#3:jsr vgm_update_register1  ; Tone3
-    bcc more_updates
-    cpy #&08     ; EOF marker? (0x08 is an invalid tone 3 value)
-    bne more_updates
-    jsr sn_reset ; returns non-zero in A
-    lda #&ff
-    sta vgm_finished
-.exit
-    rts
-
-.more_updates
-
-
-    lda#7:jsr vgm_update_register1  ; Volume3
-IF TRUE    
-    lda#0:jsr vgm_update_register2  ; Tone0
-    lda#1:jsr vgm_update_register2  ; Tone1
-    lda#2:jsr vgm_update_register2  ; Tone2
-    lda#4:jsr vgm_update_register1  ; Volume0
-    lda#5:jsr vgm_update_register1  ; Volume1
-    lda#6:jsr vgm_update_register1  ; Volume2
-ENDIF
-ELSE
-    ; If it is 255 we have reached the EOF marker
-    lda #3:jsr vgm_get_register_data
-
-    cmp #&ff:bne no_eof
-    jsr sn_reset ; returns non-zero in A
-    sta vgm_finished
-    rts
-.no_eof
-    ; skip tone3 updates if 15
-    ; this prevents unwanted reset of the LSFR
-    cmp #&0f:beq no_change3
-
-    ora #&80 + (3<<5):jsr sn_write
-
-.no_change3
-    ;rts    
-    ; Channel 0 tone
-    lda #0:jsr vgm_get_register_data:ora #&80 + (0<<5):jsr sn_write
-    lda #0:jsr vgm_get_register_data:jsr sn_write
-
-    ; Channel 1 tone
-    lda #1:jsr vgm_get_register_data:ora #&80 + (1<<5):jsr sn_write
-    lda #1:jsr vgm_get_register_data:jsr sn_write
-
-    ; Channel 2 tone
-    lda #2:jsr vgm_get_register_data:ora #&80 + (2<<5):jsr sn_write
-    lda #2:jsr vgm_get_register_data:jsr sn_write
-
-
-    ; Channel 0-3 volumes
-    lda #4:jsr vgm_get_register_data:ora #&90 + (0<<5):jsr sn_write
-    lda #5:jsr vgm_get_register_data:ora #&90 + (1<<5):jsr sn_write
-    lda #6:jsr vgm_get_register_data:ora #&90 + (2<<5):jsr sn_write
-    lda #7:jsr vgm_get_register_data:ora #&90 + (3<<5):jsr sn_write
-ENDIF
     rts
 }
 
@@ -1066,7 +897,34 @@ ENDIF
     lda vgm_finished
     pha
     bne done
-    jsr vgm_get_data
+
+    ; SN76489 data register format is %1cctdddd where cc=channel, t=0=tone, t=1=volume, dddd=data
+    ; The data is run length encoded.
+    ; Get Channel 3 tone first because that contains the EOF marker
+    lda vgm_finished
+    bne exit
+
+.update
+    lda#3:jsr vgm_update_register1  ; Update Tone3, C clear if data changed
+    bcc more_updates
+    cpy #&08     ; EOF marker? (0x08 is an invalid tone 3 value)
+    bne more_updates
+    jsr sn_reset ; returns non-zero in A
+    lda #&ff
+    sta vgm_finished
+.exit
+    rts
+
+.more_updates
+
+    lda#7:jsr vgm_update_register1  ; Volume3
+    lda#0:jsr vgm_update_register2  ; Tone0
+    lda#1:jsr vgm_update_register2  ; Tone1
+    lda#2:jsr vgm_update_register2  ; Tone2
+    lda#4:jsr vgm_update_register1  ; Volume0
+    lda#5:jsr vgm_update_register1  ; Volume1
+    lda#6:jsr vgm_update_register1  ; Volume2
+
 .done
     pla
     rts
@@ -1075,10 +933,82 @@ ENDIF
 
 
 .vgm_end
-;SKIP &1000
-;IF SPEED_TEST
-;SKIP &1000
-;ENDIF
+
+
+
+
+
+;-------------------------------------------
+; main
+;-------------------------------------------
+
+
+
+.vgm_buffer_start
+
+; reserve space for the vgm decode buffers (8x256 = 2Kb)
+ALIGN 256
+.vgm_stream_buffers
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+    skip 256
+
+
+.vgm_buffer_end
+
+
+.main
+{
+    ; initialize the vgm player with a vgc data stream
+    lda #hi(vgm_stream_buffers)
+    ldx #lo(vgm_data)
+    ldy #hi(vgm_data)
+    jsr vgm_init
+
+;    lda #22
+;    jsr &ffee
+;    lda #2
+;    jsr &ffee
+
+
+IF TEST_DATA
+    jmp mytest
+ENDIF
+
+    ; loop & update
+    sei
+.loop
+    ;lda #19:jsr &fff4
+
+; set to false to playback at full speed for performance testing
+IF TRUE 
+    lda #2
+    .vsync1
+    bit &FE4D
+    beq vsync1
+    sta &FE4D
+ENDIF
+
+    lda #&03:sta&fe21
+    jsr vgm_update
+    pha
+    lda #&07:sta&fe21
+    pla
+    beq loop
+    cli
+    rts
+}
+
+
+;INCLUDE "lib/swr.asm"
+;INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debugging mainly
+;INCLUDE "lib/disksys.asm"
+
 
 .vgm_data
 ;INCBIN "data/mongolia.vgm.vgc"
