@@ -1,5 +1,30 @@
 #!/usr/bin/env python
-# Experiments with compressing SN76489 based VGM data
+# vgmpack.py
+# Compression tool for optimal packing of SN76489-based PSG VGM data for use on 8-bit CPUs
+# By Simon Morris (https://github.com/simondotm/)
+# See https://github.com/simondotm/vgm-packer
+#
+# Copyright (c) 2019 Simon Morris. All rights reserved.
+#
+# "MIT License":
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the Software
+# is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
 
 # Packing SN76489 VGM data into the most efficient storage format requires:
 #  1. Interleaved data unpacked into serialized data per register
@@ -11,6 +36,7 @@
 #   in order to support streamed decoding on 8-bit systems, our compression scheme has to use local decompression buffers.
 # This packer deploys a number of techniques that provide the best compression for lowest ram overhead.
 #   
+# It utilises LZ4 and Huffman encoders from https://github.com/simondotm/lz4enc-python
 
 import functools
 import itertools
@@ -36,9 +62,6 @@ from huffman import Huffman
 
 class FatalError(Exception):
 	pass
-
-
-
 
 class VgmStream:
 
