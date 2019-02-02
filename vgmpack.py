@@ -615,172 +615,6 @@ class VgmStream:
 
 	#-------------------------------------------------------------------------------------------------
 	
-	def quantize(self, play_rate):
-				
-		print "   VGM Processing : Quantizing VGM to " + str(play_rate) + " Hz"
-
-		if self.VGM_FREQUENCY % play_rate != 0:
-			print " ERROR - Cannot quantize to a fractional interval, must be an integer factor of 44100"
-			return
-		
-		# total number of commands in the vgm stream
-		num_commands = len(self.command_list)
-
-		# total number of samples in the vgm stream
-		total_samples = int(self.metadata['total_samples'])
-
-		vgm_time = 0
-		playback_time = 0
-
-		interval_time = self.VGM_FREQUENCY/play_rate	
-		
-		vgm_command_index = 0
-
-		unhandled_commands = 0
-
-		# first step is to quantize the command stream to the playback rate rather than the sample rate
-
-		output_command_list = []
-
-		# clip the output to the desired length if specified as non zero number of 'play_rate' frames
-		total_frames = self.LENGTH
-		if total_frames > 0:
-			print "Limiting total frames to " + str(total_frames)
-			print "original total_samples " + str(total_samples)
-			total_samples = (self.VGM_FREQUENCY * total_frames)
-			print "new total_samples " + str(total_samples)
-			self.metadata['total_samples'] = total_samples
-
-						
-		accumulated_time = 0
-		# process the entire vgm
-		while playback_time < total_samples:
-
-			quantized_command_list = []
-			playback_time += interval_time
-			
-			# if playback time has caught up with vgm_time, process the commands
-			while vgm_time <= playback_time and vgm_command_index < len(self.command_list): 
-			
-				# fetch next command & associated data
-				command = self.command_list[vgm_command_index]["command"]
-				data = self.command_list[vgm_command_index]["data"]
-				
-				# process the command
-				# writes get accumulated in this time slot
-				# waits get accumulated to vgm_time
-				
-				if b'\x70' <= command <= b'\x7f':	
-					pdata = binascii.hexlify(command)
-					t = int(pdata, 16)
-					t &= 15
-					t += 1
-					vgm_time += t
-					scommand = "WAITn"
-					if self.VERBOSE: print "WAITN=" + str(t)
-				else:
-					pcommand = binascii.hexlify(command)
-				
-					if pcommand == "50":
-						# add the latest command to the list
-						quantized_command_list.append( { 'command' : command, 'data' : data } )
-					else:
-						if pcommand == "61":
-							scommand = "WAIT"
-							pdata = binascii.hexlify(data)
-							t = int(pdata, 16)
-							# sdm: swap bytes to LSB
-							lsb = t & 255
-							msb = (t / 256)
-							t = (lsb * 256) + msb
-							vgm_time += t		
-							if self.VERBOSE: print "WAIT=" + str(t)
-						else:			
-							if pcommand == "66":	#end
-								# send the end command
-								output_command_list.append( { 'command' : command, 'data' : data } )
-								# end
-							else:
-								if pcommand == "62":	#wait60
-									vgm_time += 735
-								else:
-									if pcommand == "63":	#wait50
-										vgm_time += 882								
-									else:
-										unhandled_commands += 1		
-				
-				if self.VERBOSE: print "vgm_time=" + str(vgm_time) + ", playback_time=" + str(playback_time) + ", vgm_command_index=" + str(vgm_command_index) + ", output_command_list=" + str(len(output_command_list)) + ", command=" + pcommand
-				vgm_command_index += 1
-			
-			if self.VERBOSE: print "vgm_time has caught up with playback_time"
-			
-
-			
-			# we've caught up with playback time, so append the quantized command list to the output command list
-			if (len(quantized_command_list) > 0) :
-			
-				
-			
-				# flush any pending wait commands before data writes, to optimize redundant wait commands
-
-				if self.VERBOSE: print "Flushing " + str(len(quantized_command_list)) + " commands, accumulated_time=" + str(accumulated_time)
-				
-				# make sure we limit the max time delay to be the nearest value under 65535
-				# that is wholly divisible by the quantization interval
-				max_accumulated_time = 65535 / (self.VGM_FREQUENCY/play_rate)
-				max_accumulated_time = max_accumulated_time * (self.VGM_FREQUENCY/play_rate)
-				while (accumulated_time > 0):
-					
-					# ensure no wait commands exceed the 16-bit limit
-					t = accumulated_time
-					if (t > max_accumulated_time):
-						t = max_accumulated_time
-					
-					# optimization: if quantization time step is 1/50 or 1/60 of a second use the single byte wait
-					if t == 882: # 50Hz
-						if self.VERBOSE: print "Outputting WAIT50"
-						output_command_list.append( { 'command' : b'\x63', 'data' : None } )
-					else:
-						if t == 882*2: # 25Hz
-							if self.VERBOSE: print "Outputting 2x WAIT50 "
-							output_command_list.append( { 'command' : b'\x63', 'data' : None } )	
-							output_command_list.append( { 'command' : b'\x63', 'data' : None } )	
-						else:
-							if t == 735: # 60Hz
-								if self.VERBOSE: print "Outputting WAIT60"
-								output_command_list.append( { 'command' : b'\x62', 'data' : None } )	
-							else:
-								if t == 735*2: # 30Hz
-									if self.VERBOSE: print "Outputting WAIT60 x 2"
-									output_command_list.append( { 'command' : b'\x62', 'data' : None } )	
-									output_command_list.append( { 'command' : b'\x62', 'data' : None } )	
-								else:
-									if self.VERBOSE: print "Outputting WAIT " + str(t) + " (" + str(float(t)/float(interval_time)) + " intervals)"
-									# else emit the full 16-bit wait command (3 bytes)
-									output_command_list.append( { 'command' : b'\x61', 'data' : struct.pack('H', t) } )	
-
-					accumulated_time -= t
-						
-				# output pending commands
-				output_command_list += quantized_command_list
-
-
-			# accumulate time to next quantized time period
-			next_w = (self.VGM_FREQUENCY/play_rate)
-			accumulated_time += next_w
-			if self.VERBOSE: print "next_w=" + str(next_w)
-
-
-		# report
-		print "Processed VGM stream, quantized to " + str(play_rate) + "Hz playback intervals" 
-		print "- originally contained " + str(num_commands) + " commands, now contains " + str(len(output_command_list)) + " commands"
-
-		self.command_list = output_command_list
-		num_commands = len(output_command_list)	
-		self.metadata['rate'] = play_rate
-
-
-
 	# returns bytearray containing the raw data version of the vgm
 	def as_binary(self, rawheader = True):
 		print "   VGM Processing : Output binary file "
@@ -1012,13 +846,7 @@ def split_raw(rawData, stripCommands = True):
 	#    print(output_blocks[6])
 
 	# Add EOF marker (0x08) to tone3 byte stream
-	if True:
-		output_blocks[6].append(0x08)	# 0x08 is an invalid noise tone.
-	else:
-		for x in range(11):
-			output_blocks[x].append(255)
-
-
+	output_blocks[6].append(0x08)	# 0x08 is an invalid noise tone.
 
 	# return the split blocks
 	return output_blocks
@@ -1281,18 +1109,6 @@ def toByteArray(array, size = 1):
 
 
 
-# huffman compress
-def huffman(data):
-	#data = toByteArray(lz4.stats[name], size)
-	codec = HuffmanCodec.from_data(data)
-	encoded = codec.encode(data)
-	print(" huffman insize=" + str(len(data)) + ", outsize=" + str(len(encoded)))
-	assert type(encoded) == type(b'')
-	assert len(encoded) < len(data)
-	decoded = codec.decode(encoded)
-	#assert decoded == data    
-	codec.print_code_table()
-	return encoded
 
 #------------------------------------------------------------------------
 # Main()
@@ -1306,44 +1122,40 @@ argv = sys.argv
 filename = argv[1]
 
 
-# load the VGM file
+# load the VGM file, or alternatively interpret as a binary
 if filename.lower()[-4:] == ".vgm":
 	vgm = VgmStream(filename)
-	#vgm.quantize(50)
 	data_block = vgm.as_binary()
 else:
 	fh = open(filename, 'rb')
 	data_block = bytearray(fh.read())
 	fh.close()	
 
-#print len(input_block)
-
 
 data_offset = 0
-if True:
-	# parse the header
-	header_size = data_block[0]       # header size
-	play_rate = data_block[1]       # play rate
 
-	if header_size == 5 and play_rate == 50:
-		packet_count = data_block[2] + data_block[3]*256       # packet count LO
-		duration_mm = data_block[4]       # duration mm
-		duration_ss = data_block[5]       # duration ss
-		
-		data_offset = header_size+1
-		data_offset += data_block[data_offset]+1
-		data_offset += data_block[data_offset]+1
+# parse the header
+header_size = data_block[0]       # header size
+play_rate = data_block[1]       # play rate
+
+if header_size == 5 and play_rate == 50:
+	packet_count = data_block[2] + data_block[3]*256       # packet count LO
+	duration_mm = data_block[4]       # duration mm
+	duration_ss = data_block[5]       # duration ss
+	
+	data_offset = header_size+1
+	data_offset += data_block[data_offset]+1
+	data_offset += data_block[data_offset]+1
 
 
-		print("header_size=" +str(header_size))
-		print("play_rate="+str(play_rate))
-		print("packet_count="+str(packet_count))
-		print("duration_mm="+str(duration_mm))
-		print("duration_ss="+str(duration_ss))
-		print("data_offset="+str(data_offset))
-	else:
-		print("No header.")
-
+	print("header_size=" +str(header_size))
+	print("play_rate="+str(play_rate))
+	print("packet_count="+str(packet_count))
+	print("duration_mm="+str(duration_mm))
+	print("duration_ss="+str(duration_ss))
+	print("data_offset="+str(data_offset))
+else:
+	print("No header.")
 
 print("")
 
@@ -1391,42 +1203,13 @@ else:
 
 
 #----------------------------------------------------------
-# Try re-arranging & pairing registers for better entropy
+# Unpack the register data into 11 separate data streams
 #----------------------------------------------------------
-
-
 registers = split_raw(data_block, True)
 
-
 #------------------------------------------------------------------------------
-# Do the most promising formats first
+# Construct the optimal VGC file format output
 #------------------------------------------------------------------------------
-
-# 4-bit packing the tone3, & volumes 0-3 does save a few hundred bytes but complicates the decoder somewhat as it has to maintain state between frames.
-# Decided to put that on hold for now.
-
-if False:
-	testdata = bytearray()
-	for x in range(11):
-		testdata += registers[x]
-
-	huffc = Huffman()
-	huffc.build(testdata)
-	huffoutput = huffc.encode(testdata)
-	print("huffoutput size=" + str(len(huffoutput)))
-
-	#huffoutput = myhuffman.compress_bytes(data_block)
-	#print("huffoutput size=" + str(huffoutput))
-
-	sys.exit()
-
-
-
-
-# Paired tones, separate tone 3 + volumes (8 blocks), no 4-bit packing because that makes decoding harder.
-
-# Ok in the final format stage now
-
 
 # Step 1 - reformat the register data streams
 streams = []
@@ -1439,7 +1222,6 @@ streams.append( rle( registers[8] ) ) # v1
 streams.append( rle( registers[9] ) ) # v2
 streams.append( rle( registers[10] ) ) # v3
 
-
 if OUTPUT_RAWDATA:
 	# write a raw data version of the file in the most optimal data format
 	# (so we can see how other compressors compare with it)
@@ -1447,17 +1229,10 @@ if OUTPUT_RAWDATA:
 	for s in streams:
 		open(filename+"." + str(count) + ".part", "wb").write( s )
 		count += 1
-	#open(filename+".1.part", "wb").write( combine_registers(registers, [2, 3]) ) # tone1 HI/LO 
-	#open(filename+".2.part", "wb").write( combine_registers(registers, [4, 5]) ) # tone2 HI/LO 
-	#open(filename+".3.part", "wb").write( registers[6] ) # tone3
-	#open(filename+".4.part", "wb").write( registers[7] ) # v0
-	#open(filename+".5.part", "wb").write( registers[8] ) # v1
-	#open(filename+".6.part", "wb").write( registers[9] ) # v2
-	#open(filename+".7.part", "wb").write( registers[10] ) # v3
-
-
 
 # Step 2 - LZ4 compress these streams
+
+# Output the LZ4 frame header
 output = bytearray()
 lz4.beginFrame(output)
 
@@ -1471,15 +1246,14 @@ if LZ48 or ENABLE_HUFFMAN:
 	output[2] = 0x43
 	output[3] = n
 
-
-
-
+# LZ4 Compress the 8 data streams
 for i in range(len(streams)):
 	streams[i] = lz4.compressBlock( streams[i] )
 
+
+# Step 3 - Huffcode these streams (optional - better ratio, lower decoder performance)
 if ENABLE_HUFFMAN:
 
-	# Step 3 - Huffcode these streams
 	huffman = Huffman()
 	
 	# our decoder only supports upto 16-bit codes.
@@ -1517,774 +1291,4 @@ ofilename = filename+".vgc"
 
 # write the lz4 compressed file.
 open(ofilename, "wb").write( output )
-
-
-
-sys.exit()
-
-
-LZ4_COMPATIBLE = True
-# no compression for now, to add the LZ4 framing
-#lz4.setCompression(0, window)
-
-# turn on byte optimization if search window is 8-bits
-# note this produces non lz4 compatible streams
-if lz4.MaxDistance < 256:
-	LZ4.DistanceByteSize = 1
-	print(" * Byte optimization ENABLED")
-	LZ4_COMPATIBLE = False
-
-
-
-output = bytearray()
-lz4.beginFrame(output)
-stream0 = lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-stream1 = lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-stream2 = lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-stream3 = lz4.compressBlock( registers[6] ) # tone3
-stream4 = lz4.compressBlock( registers[7] ) # v0
-stream5 = lz4.compressBlock( registers[8] ) # v1
-stream6 = lz4.compressBlock( registers[9] ) # v2
-stream7 = lz4.compressBlock( registers[10] ) # v3
-
-output = stream0 + stream1 + stream2 + stream3 + stream4 + stream5 + stream6 + stream7
-
-
-lz4.endFrame(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks ")
-
-# sanity check
-if LZ4.DistanceByteSize == 1:
-	# only set if window < 256
-	# we check that all offsets in the output comply, should never fire.
-	for v in lz4.stats["offsets"]:
-		if v >= 256:
-			print("OFFSET ERROR - output file not written.")
-			sys.exit()
-
-
-ofilename = filename+".lz4"
-if not LZ4_COMPATIBLE:
-	ofilename = filename+".vgc"
-
-# write the lz4 compressed file.
-open(ofilename, "wb").write( output )
-
-
-#huffc = huff.Huffman()
-#huffc.build(output)
-#huffoutput = huffc.encode(output)
-#print("huffoutput size=" + str(len(huffoutput)))
-#open(filename+".huf2", "wb").write( huffoutput )
-
-
-#huffoutput = myhuffman.compress_bytes(output)
-#print("huffoutput size=" + str(huffoutput))
-
-#open(filename+".lz43", "wb").write( lz4.compressBlock( registers[6] ) )
-
-def do_huffman(data):
-	huffc = Huffman()
-	huffc.build(data)
-	return huffc.encode(data)
-
-# try huffman on all bytes
-if True:
-	huffdata = bytearray()
-
-	huffdata += do_huffman( stream0 )
-	huffdata += do_huffman( stream1 )
-	huffdata += do_huffman( stream2 )
-	huffdata += do_huffman( stream3 )
-	huffdata += do_huffman( stream4 )
-	huffdata += do_huffman( stream5 )
-	huffdata += do_huffman( stream6 )
-	huffdata += do_huffman( stream7 )
-
-	print("huff_all_size=" + str(len(huffdata)) )
-	open(filename+".huf", "wb").write( huffdata )
-
-if True:
-	print("huffman coding the LZ4 meta data")
-	test_all = bytearray()
-	test_all += do_huffman( toByteArray(lz4.stats["lengths_bytes"], 1) )
-	test_all += do_huffman( toByteArray(lz4.stats["offsets"], LZ4.DistanceByteSize) ) # can be one if window < 256
-	test_all += do_huffman( toByteArray(lz4.stats["tokens"], 1) )
-	test_all += do_huffman( toByteArray(lz4.stats["literal_bytes"], 1) )
-	#huffdata = do_huffman( test_all )
-	print("lz4 data test_all=" + str(len(test_all)) )
-
-huffdata = bytearray()
-huffdata += do_huffman( output )
-print("all huffman=" + str(len(huffdata)) )
-
-
-
-sys.exit()
-
-# old working version with 6502 unpacker
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( registers[6] ) # tone3
-output += lz4.compressBlock( registers[7] ) # v0
-output += lz4.compressBlock( registers[8] ) # v1
-output += lz4.compressBlock( registers[9] ) # v2
-output += lz4.compressBlock( registers[10] ) # v3
-lz4.endFrame(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks ")
-
-# sanity check
-if LZ4.DistanceByteSize == 1:
-	# only set if window < 256
-	# we check that all offsets in the output comply, should never fire.
-	for v in lz4.stats["offsets"]:
-		if v >= 256:
-			print("OFFSET ERROR - output file not written.")
-			sys.exit()
-
-
-ofilename = filename+".lz4"
-if not LZ4_COMPATIBLE:
-	ofilename = filename+".vgc"
-
-# write the lz4 compressed file.
-open(ofilename, "wb").write( output )
-
-
-#open(filename+".lz43", "wb").write( lz4.compressBlock( registers[6] ) )
-
- 
-
-
-sys.exit()
-
-
-
-
-
-
-# *** BEST SO FAR ***
-# Paired tones, separate tone 3 + volumes (8 blocks), with 4-bits packed 
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( pack4(registers[6]) ) # tone3
-output += lz4.compressBlock( pack4(registers[7]) ) # v0
-output += lz4.compressBlock( pack4(registers[8]) ) # v1
-output += lz4.compressBlock( pack4(registers[9]) ) # v2
-output += lz4.compressBlock( pack4(registers[10]) ) # v3
-lz4.endFrame(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks - 4 bit PACKED")
-
-# write the lz4 compressed file.
-open(filename+".lz4", "wb").write( output )
-
-
-
-
-# *** BEST SO FAR ***
-# Paired tones, separate tone 3 + volumes (8 blocks), with 4-bits packed 
-LZ4.DistanceByteSize = 1
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( pack4(registers[6]) ) # tone3
-output += lz4.compressBlock( pack4(registers[7]) ) # v0
-output += lz4.compressBlock( pack4(registers[8]) ) # v1
-output += lz4.compressBlock( pack4(registers[9]) ) # v2
-output += lz4.compressBlock( pack4(registers[10]) ) # v3
-lz4.endFrame(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks - 4 bit PACKED")
-
-# write the lz4 compressed file.
-open(filename+".lz4x", "wb").write( output )
-
-
-
-
-
-
-
-
-
-# write a dump of the compressed data
-# with the lengths/offset,tokens & literals
-dump = bytearray()
-dump += toByteArray(lz4.stats["lengths_bytes"])
-dump += toByteArray(lz4.stats["offsets"], 2)
-dump += toByteArray(lz4.stats["tokens"])
-dump += toByteArray(lz4.stats["literal_bytes"])
-open(filename+".meta", "wb").write( dump )
-
-z = len(lz4.stats["lengths_bytes"])
-z+= len(lz4.stats["offsets"])*2
-z+= len(lz4.stats["tokens"])
-z+= len(lz4.stats["literal_bytes"])
-z+= 7  # frame overhead
-z+= 4 * 8 # 8 blocks * 4
-print("stats size=" + str(z))
-print(" dump size=" + str(len(dump)))
-
-
-
-huffdata = bytearray()
-huffdata += huffman( toByteArray(lz4.stats["lengths_bytes"], 1))
-huffdata += huffman( toByteArray(lz4.stats["offsets"], LZ4.DistanceByteSize)) # can be one if window < 256
-huffdata += huffman( toByteArray(lz4.stats["tokens"], 1))
-huffdata += huffman( toByteArray(lz4.stats["literal_bytes"], 1))
-open(filename+".huff", "wb").write( huffdata )
-
-print(" huff size=" + str(len(huffdata)))
-
-frequencies(False)
-
-# try huffman on all bytes
-test_all = bytearray()
-test_all += toByteArray(lz4.stats["lengths_bytes"], 1)
-test_all += toByteArray(lz4.stats["offsets"], LZ4.DistanceByteSize) # can be one if window < 256
-test_all += toByteArray(lz4.stats["tokens"], 1)
-test_all += toByteArray(lz4.stats["literal_bytes"], 1)
-huffdata = huffman( test_all )
-print("huff_all_size=" + str(len(huffdata)) )
-open(filename+".huffall", "wb").write( huffdata )
-
-
-#--- we can use 4 huffman tables - is slightly better than 1 for all.
-# can also use 8-bit offsets if window is 255
-# lengths, offsets, tokens, literals
-# would be 4x 256 tables = 1024 overhead
-#  
-
-# Process
-# 1. Unpack the raw or vgm data into 11 register arrays. Make sure tone3 has 0 for no change.
-# 2. Distill the 11 register arrays to 8 (t0,t1,t2,t3,v0,v1,v2,v3), with combined tones. Tones 0,1,2 are 16-bit. Tone3 + Volumes are packed 4 bits
-# 3. LZ4 Compress the 8 register arrays to 8 LZ4 blocks. No frame or block headers. Level 9, window size 255.
-# 4. Combine the 8 LZ4 buffers and create a huffman table
-# 5. Output VGM header
-# 6. Output the huffman table (256 bytes?)
-# 7. Create 8 huffman compressed versions of the LZ4 data buffers
-# 8. Output 8 x 16-bit sizes 
-# 9. Output 8 x huffman buffers 
-# (no workspace in files to save disk space)
-
-# Decoder
-# 1. Parse header
-# 2. Load huf table
-# 3. Allocate 8 x 256 byte buffers (2048 byte workspace per tune)
-# 4. Mount & prepare decoder for each of 8 buffers
-# 6. Within context N 0-8
-# 7.  Unpack huffman byte() function (tracks bitstream)
-# 8.    Get token byte - 
-# 9.     Get & store literal count
-# A.     Get & store match length
-# B.     Get & store match offset
-# C.      at any given time we are either copying a literal or copying a matched byte
-# D.       Unpack literal byte, copy to buffer N, and return 
-# E.       Copy matched byte from buffer N[offset++], copy to buffer N[index++
-# F.
-# 5. ReadByte(N) function, where N is register (0-7)
-# 6.  ReadByte(0), add flags, sendpsg, ReadByte(1), add flags, sendpsg
-
-# Choice is: Are we using regular LZ4 format, where huffman table is a user data block, and each block is huffman encoded.
-# Or are we creating a custom LZ4 "style" format?
-# huffman coding cant be file wide, due to need to have 8 bitstreams
-# huffman coding LZ4 blocks breaks compatibility anyway
-# Regular LZ4 format uses 16-bit match distances. We only need 8 bit. 
-# Its possible we might get better compression if we can modify LZ4 encoder to use 8-bit offsets in the cost calculations
-# Is there a possibility for a fixed huffman table?
-# Dont think it is worth the effort trying to support LZ5 - i) no support for 8 bit offsets, ii) fiddly format?
-# Could try a test compression I guess.
-
-
-# Even LZ4 beats exo on the original interleaved format, 8x 256 pages needed for unpack. Has to be 255 window for VGM.
-# Get working on LZ4 form first, then optimize later.
-# Type 2 is not LZ4 compatible.
-# 1. Change offsets to 8 bit
-# 2. Send huff table in user data block.
-# 3. Huff encode each LZ4 block - decoder switches LDA bytestream for JSR getbyte (huff decode 1 byte)
-
-
-sys.exit()
-
-
-# Paired tones, separate tone 3 + volumes (8 blocks), with 4-bits packed 
-output = bytearray()
-lz4.beginFrame(output)
-lz4.setCompression(level, 1024)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-lz4.setCompression(level, 255)
-output += lz4.compressBlock( pack4(registers[6]) ) # tone3
-output += lz4.compressBlock( pack4(registers[7]) ) # v0
-output += lz4.compressBlock( pack4(registers[8]) ) # v1
-output += lz4.compressBlock( pack4(registers[9]) ) # v2
-output += lz4.compressBlock( pack4(registers[10]) ) # v3
-
-lz4.endFrame(output)
-report(data_block, output, 8, "[01][23][45][6][7][8][9][A] WITH register masks - 4bit PACKED - 1Kb/255b (4352 oh)")
-
-frequencies(False)
-
-#----------------------------------
-
-
-
-# Paired tones, separate tone 3 + volumes (8 blocks) 
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( registers[6] ) # tone3
-output += lz4.compressBlock( registers[7] ) # v0
-output += lz4.compressBlock( registers[8] ) # v1
-output += lz4.compressBlock( registers[9] ) # v2
-output += lz4.compressBlock( registers[10] ) # v3
-
-lz4.endFrame(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks")
-
-
-
-# Paired tones, separate tone 3 + volumes (8 blocks), with DIFFING
-for x in range(11):
-	registers[x] = diff( registers[x] )
-
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( registers[6] ) # tone3
-output += lz4.compressBlock( registers[7] ) # v0
-output += lz4.compressBlock( registers[8] ) # v1
-output += lz4.compressBlock( registers[9] ) # v2
-output += lz4.compressBlock( registers[10] ) # v3
-lz4.endFrame(output)
-
-open("z_diff.lz4", "wb").write(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks - DIFF")
-frequencies(False)
-
-registers = split_raw(data_block, True)
-
-
-# Paired tones, separate tone 3 + volumes (8 blocks), with DELTAS
-for x in range(11):
-	registers[x] = delta( registers[x] )
-
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( registers[6] ) # tone3
-output += lz4.compressBlock( registers[7] ) # v0
-output += lz4.compressBlock( registers[8] ) # v1
-output += lz4.compressBlock( registers[9] ) # v2
-output += lz4.compressBlock( registers[10] ) # v3
-lz4.endFrame(output)
-
-open("z_delta.lz4", "wb").write(output)
-report(data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks - DELTA")
-frequencies(False)
-
-registers = split_raw(data_block, True)
-
-
-
-
-#---------------------------------------------
-# Less optimal combinations below
-#---------------------------------------------
-
-# d. Paired tones, paired tone 3 + volume, separate volumes (7 blocks)
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [6, 10]) ) # tone3, volume3
-output += lz4.compressBlock(registers[7]) # volume 0
-output += lz4.compressBlock(registers[8]) # volume 1
-output += lz4.compressBlock(registers[9]) # volume 2
-
-lz4.endFrame(output)
-report(data_block, output, 7, "Paired 7 register blocks [01][23][45][6A][7][8][9] WITH register masks" )
-
-
-
-# e. Paired tones, paired tone 3 + volume, separate volumes (5 blocks)
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1]) ) # tone0 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [2, 3])  ) # tone1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5]) ) # tone2 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [6, 10]) ) # tone3, volume3
-output += lz4.compressBlock( combine_registers(registers, [7, 8, 9]) ) # volume0, volume1, volume2
-lz4.endFrame(output)
-report(data_block, output, 5, "Paired 5 register blocks [01][23][45][6A][789] WITH register masks" )
-
-
-
-
-
-# f. Paired tones, paired tone 3 + volume, separate volumes (3 blocks)
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1, 2, 3]) ) # tone0,1 HI/LO
-output += lz4.compressBlock( combine_registers(registers, [4, 5, 6, 10])  ) # tone2 HI/LO, tone3 LO/Volume
-output += lz4.compressBlock( combine_registers(registers, [7, 8, 9, 6]) ) # volume0, volume1, volume2
-lz4.endFrame(output)
-report(data_block, output, 5, "Paired 5 register blocks [0123][456A][7896] WITH register masks" )
-
-
-
-##
-
-# b. Packed as tones, separate volumes (5 blocks)
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1, 2, 3, 4, 5, 6]) ) # tone0-3 HI/LO, tone 4 LO
-output += lz4.compressBlock( registers[7] )
-output += lz4.compressBlock( registers[8] )
-output += lz4.compressBlock( registers[9] )
-output += lz4.compressBlock( registers[10] )
-lz4.endFrame(output)
-report(data_block, output, 5, "Paired 5 register blocks [0123456][7][8][9][A] WITH register masks")
-
-# a. Packed as tones and volumes (2 blocks)
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1, 2, 3, 4, 5, 6]) ) # tone0-3 HI/LO, tone 4 LO
-output += lz4.compressBlock( combine_registers(registers, [7, 8, 9,10]) ) # volumes 0-3
-lz4.endFrame(output)
-report(data_block, output, 2, "Paired 2 register blocks [0123456][789A] WITH register masks" )
-
-
-
-
-
-# Rankings
-# [01][23][45][6][7][8][9][A] - 12922
-# [01][23][45][6A][7][8][9]   - 15504 
-# [01][23][45][6A][789]       - 20722
-# [0123][456A][7896]          - 29792
-# [012345][7][8][9][A]        - 30828
-# [0123456][789A]             - 37349
-# 256 / 8
-
-
-
-
-#----------------------------------------------------------
-# Compress the raw source file  
-#----------------------------------------------------------
-print("")
-
-
-
-
-# useful benchmark - are our optimizations better than the status quo?
-output = lz4.compress(data_block)
-report(data_block, output, 1, "Raw Data (Interleaved RLE)")
-
-#----------------------------------------------------------
-# Try compressing the bytes in pure interleaved sequence
-# Usually terrible compression
-#----------------------------------------------------------
-registers = split_raw(data_block, False)
-
-output = bytearray()
-lz4.beginFrame(output)
-output += lz4.compressBlock( combine_registers(registers, [0, 1, 2, 3, 4, 5, 6, 6, 7, 8, 9, 10 ]) ) 
-lz4.endFrame(output)
-report(data_block, output, 1, "Sequenced register blocks [0-A] WITH NO register masks")
-
-
-
-#----------------------------------------------------------
-# Compress the source file split into register sections
-#----------------------------------------------------------
-# These are actually of no value because we cannot decode them later due to lack of random access.
-# Only useful to see what block overhead is, and what difference register masking makes (answer:not much)
-
-registers = split_raw(data_block, False)
-buffer = combine_parts(registers)
-output = lz4.compress(buffer)
-report(data_block, output, 1, "Split   data   NO register masks")
-
-registers = split_raw(data_block, True)
-buffer = combine_parts(registers)
-output = lz4.compress(buffer)
-report(data_block, output, 1, "Split   data WITH register masks")
-
-# without register masks
-registers = split_raw(data_block, False)
-output = bytearray()
-lz4.beginFrame(output)
-for x in range(11):
-	output += lz4.compressBlock(registers[x])
-lz4.endFrame(output)
-report(data_block, output, 1, "Split blocks   NO register masks")
-
-# with register masks
-registers = split_raw(data_block, True)
-output = bytearray()
-lz4.beginFrame(output)
-for x in range(11):
-	output += lz4.compressBlock(registers[x])
-lz4.endFrame(output)
-report(data_block, output, 1, "Split blocks WITH register masks")
-
-sys.exit()
-
-OPTIMIZED = True
-# pack the data more optimally
-if OPTIMIZED:
-
-	# given a block of 4-bit bytes, compress two bytes to 1
-	def pack4(block):
-		packed_block = bytearray()
-
-		for x in range(0, len(block), 2):
-			a = block[x+0] & 15
-			b = block[x+1] & 15
-			c = (a << 4) + b
-			packed_block.append(c)
-		return packed_block
-
-	# given a block of 2-bit bytes, compress four bytes to 1
-	def pack2(block):
-		packed_block = bytearray()
-
-		for x in range(0, len(block), 4):
-			a = block[x+0] & 3
-			b = block[x+1] & 3
-			c = block[x+2] & 3
-			d = block[x+3] & 3
-
-			c = (a << 6) + (b<<4) + (c<<2) + d
-			packed_block.append(c)
-		return packed_block
-
-	# given a block of two arrays storing 6 bits/4 bits tone data, shift data to 2 bits/8 bits
-	def shift_tones(blocklo, blockhi):
-		for x in range(0, len(blocklo)):
-			lo = blocklo[x] 
-			hi = blockhi[x]
-			t = ((hi & 63) << 4) | (lo & 15)
-			blocklo[x] = t & 255
-			blockhi[x] = (t >> 8) & 3
-
-	# given a block of two arrays storing 6 bits/4 bits tone data, sequence data to two bytes
-	def seq_tones(blocklo, blockhi):
-		out = bytearray()
-		for x in range(0, len(blocklo)):
-			lo = blocklo[x] 
-			hi = blockhi[x]
-			t = ((hi & 63) << 4) | (lo & 15)
-			out.append(t & 255)
-			out.append((t >> 8) & 3)
-		return out
-
-	def combine_tones(lo1, hi1, lo2, hi2, lo3, hi3, lo4):
-		out = bytearray()
-		for x in range(0, len(lo1)):
-			t = ((hi1[x] & 63) << 4) | (lo1[x]  & 15)
-			out.append(t & 255)
-			out.append((t >> 8) & 3)
-
-			t = ((hi2[x] & 63) << 4) | (lo2[x]  & 15)
-			out.append(t & 255)
-			out.append((t >> 8) & 3)
-
-			t = ((hi3[x] & 63) << 4) | (lo3[x]  & 15)
-			out.append(t & 255)
-			out.append((t >> 8) & 3)
-
-			t = (lo4[x]  & 15)
-			out.append(t & 15)
-
-		return out
-
-
-
-
-	# process tones 1,2,3 Lo/hi
-	if False:
-		# shift so we have 8-bit / 2-bit rather than 4-bit / 6-bit
-		# makes a big improvement to compression
-		shift_tones(output_blocks[0], output_blocks[1])
-		shift_tones(output_blocks[2], output_blocks[3])
-		shift_tones(output_blocks[4], output_blocks[5])
-	else:
-		if True:
-			# reorganise data so tones are sequenced in 16-bits rather than separate
-			# this has advantage of reducing compression streams by 3 (so 8 instead of 11)
-			# does not greatly impact compression
-			output_blocks[0] = seq_tones(output_blocks[0], output_blocks[1])
-			output_blocks[1] = bytearray()
-
-			output_blocks[2] = seq_tones(output_blocks[2], output_blocks[3])
-			output_blocks[3] = bytearray()
-
-			output_blocks[4] = seq_tones(output_blocks[4], output_blocks[5])
-			output_blocks[5] = bytearray()
-		else:
-			# try putting all of the tone data into a single stream
-			# It badly affects compression. 14Kb tune becomes 28Kb
-			output_blocks[0] = combine_tones(output_blocks[0], output_blocks[1], output_blocks[2], output_blocks[3], output_blocks[4], output_blocks[5], output_blocks[6])
-			output_blocks[1] = bytearray()
-			output_blocks[2] = bytearray()
-			output_blocks[3] = bytearray()
-			output_blocks[4] = bytearray()
-			output_blocks[5] = bytearray()
-			output_blocks[6] = bytearray()
-
-	# do the bit packing
-	if True:
-		# pack tones 1,2,3 
-		output_blocks[1] = pack4(output_blocks[1])
-		output_blocks[3] = pack4(output_blocks[3])
-		output_blocks[5] = pack4(output_blocks[5])
-
-		# tone 4 - 4bits packed
-		output_blocks[6] = pack4(output_blocks[6])
-
-		# volumes - 4 bits packed
-		output_blocks[7] = pack4(output_blocks[7])
-		output_blocks[8] = pack4(output_blocks[8])
-		output_blocks[9] = pack4(output_blocks[9])
-		output_blocks[10] = pack4(output_blocks[10])
-
-		
-# calc diffs
-if RLE:
-	print('run length encoding')
-	for x in range(11):
-		print('register block ' + str(x))
-		input_block = output_blocks[x]
-		diff_block = bytearray()
-		for n in range(len(input_block)):
-			if n == 0:
-				diff_block.append(input_block[0])
-			else:
-				if input_block[n] == input_block[n-1]:
-					diff_block.append(255)
-				else:
-					diff_block.append(input_block[n])
-
-		output_blocks[x] = diff_block
-
-		# RLE
-		if False:
-			rle_block = bytearray()
-			n = 0
-			while (n < len(diff_block)):
-				print('offset ' + str(n))
-				if (n < len(diff_block)-1) and diff_block[n+1] == 255:
-					offset = n
-					count = 1
-					while ((offset < len(diff_block)-1) and (count < 127)):
-						print('diff[' + str(offset+1) + ']='+str(diff_block[offset+1]))
-						if diff_block[offset+1] == 255:
-							count += 1 
-							offset += 1
-						else:
-							print('ack')
-							break
-
-					rle_block.append(count+128)
-					rle_block.append(diff_block[n])
-					n += count
-					print('run length ' + str(count))
-				else:
-					rle_block.append(diff_block[n])
-					n += 1
-
-			output_blocks[x] = rle_block
-			print('rle block size ' + str(x) + ' = ' + str(len(rle_block)))
-		
-			
-
-		
-
-# write to output files
-
-# dump file is 11 bytes x N frames (interleaved)
-bin_file = open(argv[1]+".dump", 'wb')
-# write interleaved blocks
-bin_file.write(output_block)
-bin_file.close()	
-
-# split file is 11 registers written in pages (non-interleaved)
-bin_file = open(argv[1]+".split", 'wb')
-# write separate blocks - compresses MUCH better than interleaved
-if False or RLE:
-	for x in range(11):
-		bin_file.write(output_blocks[x])
-		print('block size ' + str(x) + ' = ' + str(len(output_blocks[x])))
-else:
-	# wont work if RLE compressed since block sizes will vary
-	# try chunked non-interleaved
-	# chunk_size is the amount off buffered music data
-	# buffer size will be a multiple of 11 times this number
-	if OPTIMIZED:
-		for x in range(11):
-			bin_file.write(output_blocks[x])
-	else:
-		offset = 0
-		data_size = len(output_blocks[0])
-		CHUNK_SIZE = data_size # data_size  # 372 = 4096 byte buffer, 93 = 1023 byte buffer
-
-		while data_size > 0:
-			n = CHUNK_SIZE
-			if data_size < n:
-				n = data_size
-			chunk = bytearray()
-			for x in range(11):
-				for y in range(n):
-					chunk.append(output_blocks[x][offset+y])
-			bin_file.write(chunk)
-			offset += n
-			data_size -= n
-
-bin_file.close()	
-
-
-# write 11x register dumps
-for x in range(11):
-	bin_file = open(argv[1]+"."+str(x)+".part", 'wb')
-	bin_file.write(output_blocks[x])
-	bin_file.close()
- 
-
-# try a differential dump (non-interleaved)
-bin_file = open(argv[1]+".splitdif", 'wb')
-for x in range(11):
-	print('register block ' + str(x))
-	input_block = output_blocks[x]
-	diff_block = bytearray()
-	for n in range(len(input_block)):
-		if n == 0:
-			diff_block.append(input_block[0])
-		else:
-			if input_block[n] == input_block[n-1]:
-				diff_block.append(255)
-			else:
-				diff_block.append(input_block[n])
-
-	output_blocks[x] = diff_block
-	bin_file.write(output_blocks[x])
-
-bin_file.close()
 
