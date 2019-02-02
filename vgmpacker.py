@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# vgmpack.py
+# vgmpacker.py
 # Compression tool for optimal packing of SN76489-based PSG VGM data for use on 8-bit CPUs
 # By Simon Morris (https://github.com/simondotm/)
 # See https://github.com/simondotm/vgm-packer
