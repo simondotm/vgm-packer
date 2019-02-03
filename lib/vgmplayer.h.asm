@@ -80,3 +80,11 @@ ENDIF ; USE_HUFFMAN
 zp_buffer = &6a ; lz_zp + 10          ; 2 bytes, current decode window buffer
 zp_temp = &6c ; lz_zp + 12           ; 2 bytes
 zp_stash = &6e ;lz_zp + 14          ; 1 byte
+
+
+; when mounting a VGM file we use these two variables as temporaries
+zp_block_data = zp_buffer+0
+zp_block_size = zp_temp+0
+
+zp_symbol_table_size = zp_stash + 0
+zp_length_table_size = zp_stash + 1

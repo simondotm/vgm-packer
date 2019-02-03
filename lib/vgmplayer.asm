@@ -386,14 +386,16 @@ ENDIF ; USE_HUFFMAN
 .decoder_end
 
 
-.vgm_start
-
 ;-------------------------------------------
 ; vgm player
 ;-------------------------------------------
 
 
+.vgm_start
+
+;-------------------------------------------
 ; local vgm workspace
+;-------------------------------------------
 
 ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
@@ -406,16 +408,12 @@ ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 
 
 
-; when mounting a VGM file we use these two variables as temporaries
-zp_block_data = zp_buffer+0
-zp_block_size = zp_temp+0
-
-zp_symbol_table_size = zp_stash + 0
-zp_length_table_size = zp_stash + 1
-
 .vgm_buffers  equb 0    ; the HI byte of the address where the buffers are stored
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 .vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
+.vgm_temp equb 0
+.vgm_temp2 equb 0 ; TODO:shared temp?
+
 
 ; 8 counters for VGM register update counters (RLE)
 .vgm_register_counts
@@ -433,6 +431,15 @@ zp_length_table_size = zp_stash + 1
     EQUB &90 + (1<<5)   ; Volume 1
     EQUB &90 + (2<<5)   ; Volume 2
     EQUB &90 + (3<<5)   ; Volume 3
+
+
+
+
+
+;-------------------------------------------
+; Sound chip routines
+;-------------------------------------------
+
 
 
 ; Write data to SN76489 sound chip
@@ -461,6 +468,12 @@ zp_length_table_size = zp_stash + 1
 	lda #&ff : jsr sn_write
 	rts
 }
+
+
+;-------------------------------------------
+; VGM routines
+;-------------------------------------------
+
 
 ; VGC file parsing - Skip to the next block. 
 ; on entry zp_block_data points to current block (header)
@@ -652,8 +665,6 @@ ENDIF
     rts    
 }
 
-.vgm_temp equb 0
-
 ;----------------------------------------------------------------------
 ; fetch register data byte from register stream selected in A
 ; This byte will be LZ4 encoded
@@ -677,7 +688,7 @@ ENDIF
 IF USE_TABLE16 ;USE_HUFFMAN
     asl a   ; *16 = lz_zp_size
 ENDIF
-    sta temp
+    sta vgm_temp2
     tax
 
     ; since we have 8 separately compressed register streams
@@ -687,12 +698,11 @@ ENDIF
     ; then fetch a decompressed byte
     jsr lz_decode_byte
     pha
-    ldx temp
+    ldx vgm_temp2
     ; then we save the decoder context from ZP back to main ram
     jsr vgm_save_register_context   ; TODO:inline
     pla
     rts
-.temp equb 0 ; TODO:shared temp?
 }
 
 ; Fetch 1 register data byte from the encoded stream and send to sound chip (volumes & tone3)
