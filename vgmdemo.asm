@@ -10,7 +10,7 @@ TEST_DATA = FALSE
 
 ; Allocate vars in ZP
 .zp_start
-ORG 0
+ORG &70
 GUARD &8f
 
 
@@ -20,11 +20,14 @@ GUARD &8f
 INCLUDE "lib/bbc.h.asm"
 INCLUDE "lib/bbc_utils.h.asm"
 
+
+
 ;----------------------------------------------------------------------------------------------------------
 ; Common code headers
 ;----------------------------------------------------------------------------------------------------------
 ; Include common code headers here - these can declare ZP vars from the pool using SKIP...
 
+INCLUDE "lib/vgmplayer.h.asm"
 
 .zp_end
 
@@ -108,22 +111,6 @@ ENDIF
 }
 
 
-;INCLUDE "lib/swr.asm"
-;INCLUDE "lib/print.asm"     ; feels unnecessary, hardly used, and only for debugging mainly
-;INCLUDE "lib/disksys.asm"
-
-
-.vgm_data
-INCBIN "testvgm/androids.vgc"
-;INCBIN "testvgm/syner5.vgc"
-;INCBIN "testvgm/darkside1.vgc"
-;INCBIN "testvgm/bbcapple.vgc"
-;INCBIN "testvgm/mongolia.vgc"
-;INCBIN "testvgm/things.vgc"
-;INCBIN "testvgm/lethal7.vgc"
-;INCBIN "testvgm/CPCTL10A.vgc"
-;INCBIN "testvgm/bestpart.vgc"
-;INCBIN "testvgm/tale7.vgc"
 
 IF TEST_DATA
 .testdata
@@ -265,6 +252,22 @@ ENDIF
 
 
 INCLUDE "lib/vgmplayer.asm"
+
+
+
+.vgm_data
+INCBIN "testvgm/nd-ui.vgc"
+;INCBIN "testvgm/androids.vgc"
+;INCBIN "testvgm/syner5.vgc"
+;INCBIN "testvgm/darkside1.vgc"
+;INCBIN "testvgm/bbcapple.vgc"
+;INCBIN "testvgm/mongolia.vgc"
+;INCBIN "testvgm/things.vgc"
+;INCBIN "testvgm/lethal7.vgc"
+;INCBIN "testvgm/CPCTL10A.vgc"
+;INCBIN "testvgm/bestpart.vgc"
+;INCBIN "testvgm/tale7.vgc"
+
 
 PRINT ~vgm_data
 

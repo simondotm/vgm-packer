@@ -799,7 +799,6 @@ ENDIF
 .vgm_update
 {
     lda vgm_finished
-    pha
     bne done
 
     ; SN76489 data register format is %1cctdddd where cc=channel, t=0=tone, t=1=volume, dddd=data
@@ -828,9 +827,8 @@ ENDIF
     lda#4:jsr vgm_update_register1  ; Volume0
     lda#5:jsr vgm_update_register1  ; Volume1
     lda#6:jsr vgm_update_register1  ; Volume2
-
+    lda vgm_finished
 .done
-    pla
     rts
 }
 
