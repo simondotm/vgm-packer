@@ -1016,7 +1016,8 @@ ENDIF
 
 
 .vgm_data
-INCBIN "testvgm/syner5.vgc"
+INCBIN "testvgm/androids.vgc"
+;INCBIN "testvgm/syner5.vgc"
 ;INCBIN "testvgm/darkside1.vgc"
 ;INCBIN "testvgm/bbcapple.vgc"
 ;INCBIN "testvgm/mongolia.vgc"
