@@ -10,14 +10,14 @@
     ],
     "tasks": [
         {
-            "taskName": "Run 'vgmplayer.ssd' in Emulator",
+            "taskName": "Run 'vgmdemo.ssd' in Emulator",
             "isTestCommand": true,
             "args": [
-                "BeebEm.exe vgmplayer.ssd"
+                "BeebEm.exe vgmdemo.ssd"
             ]
         },
         {
-            "taskName": "vgmplayer.ssd",
+            "taskName": "vgmdemo.ssd",
             "problemMatcher": {
                 "owner": "6502",
                 "fileLocation": [
@@ -33,7 +33,7 @@
                 }
             },
             "args": [
-                "BeebAsm.exe -v -i vgmplayer.asm -do vgmplayer.ssd -boot Main"
+                "BeebAsm.exe -v -i vgmdemo.asm -do vgmdemo.ssd -boot Main"
             ],
             "group": {
                 "kind": "build",
