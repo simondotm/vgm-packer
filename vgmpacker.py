@@ -46,6 +46,7 @@ import time
 import binascii
 import math
 import operator
+import os
 
 from modules.lz4enc import LZ4 
 from modules.huffman import Huffman
@@ -59,7 +60,7 @@ class VgmPacker:
 	OUTPUT_RAWDATA = False # output raw dumps of the data that was compressed by LZ4/Huffman
 	RLE = True # always set now.
 	ENABLE_HUFFMAN = True # optional
-
+	VERBOSE = True
 
 	def __init__(self):
 		print("init")
@@ -422,20 +423,20 @@ class VgmPacker:
 		return r
 
 
-
-
 	#----------------------------------------------------------
 	# Process(filename)
 	# Convert the given VGM file to a compressd VGC file
 	#----------------------------------------------------------
-	def process(self, filename):
+	def process(self, src_filename, dst_filename, buffersize = 255, use_huffman = True):
+
+
 
 		# load the VGM file, or alternatively interpret as a binary
-		if filename.lower()[-4:] == ".vgm":
-			vgm = VgmStream(filename)
+		if src_filename.lower()[-4:] == ".vgm":
+			vgm = VgmStream(src_filename)
 			data_block = vgm.as_binary()
 		else:
-			fh = open(filename, 'rb')
+			fh = open(src_filename, 'rb')
 			data_block = bytearray(fh.read())
 			fh.close()	
 
@@ -539,9 +540,9 @@ class VgmPacker:
 		lz4.beginFrame(output)
 
 		# re-write LZ4 magic number if incompatible
-		if self.LZ48 or self.ENABLE_HUFFMAN:
+		if self.LZ48 or use_huffman: #self.ENABLE_HUFFMAN:
 			n = 0x00
-			if self.ENABLE_HUFFMAN:
+			if use_huffman: #self.ENABLE_HUFFMAN:
 				n |= 0x80
 			output[0] = 0x56
 			output[1] = 0x47
@@ -554,7 +555,7 @@ class VgmPacker:
 
 
 		# Step 3 - Huffcode these streams (optional - better ratio, lower decoder performance)
-		if self.ENABLE_HUFFMAN:
+		if use_huffman: #self.ENABLE_HUFFMAN:
 
 			huffman = Huffman()
 			
@@ -589,10 +590,8 @@ class VgmPacker:
 		lz4.endFrame(output)
 		self.report(lz4, data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks ")
 
-		ofilename = filename+".vgc"
-
 		# write the lz4 compressed file.
-		open(ofilename, "wb").write( output )
+		open(dst_filename, "wb").write( output )
 
 
 #------------------------------------------------------------------------
@@ -602,8 +601,44 @@ class VgmPacker:
 import argparse
 
 
-argv = sys.argv
-filename = argv[1]
 
-packer = VgmPacker()
-packer.process(filename)
+# Determine if running as a script
+if __name__ == '__main__':
+
+	print("VgmPacker.py : VGM music compressor for 8-bit CPUs")
+	print("Written in 2019 by Simon Morris, https://github.com/simondotm/vgm-packer")
+	print("")
+
+	epilog_string = "Notes:\n"
+	epilog_string += " Buffer size <256 bytes emits 8-bit LZ4 offsets, medium compression, faster decoding, 2Kb workspace\n"
+	epilog_string += " Buffer size >255 bytes emits 16-bit LZ4 offsets, higher compression, slower decoding, Size*8 workspace\n"
+	epilog_string += " Disabling huffman will result in slightly worse compression, but faster and less variable decoding speed\n"
+
+	parser = argparse.ArgumentParser(
+		formatter_class=argparse.RawDescriptionHelpFormatter,
+		epilog=epilog_string)
+
+	parser.add_argument("input", help="VGM source file (must be single SN76489 PSG format) [input]")
+	parser.add_argument("-o", "--output", metavar="<output>", help="write VGC file <output> (default is '[input].vgc')")
+	parser.add_argument("-b", "--buffer", type=int, default=255, metavar="<n>", help="Set decoder buffer size to <n> bytes, default: 255")
+	parser.add_argument("-n", "--nohuffman", help="Disable huffman compression", default=False, action="store_true")
+	parser.add_argument("-v", "--verbose", help="Enable verbose mode", action="store_true")
+	args = parser.parse_args()
+
+
+	src = args.input
+	dst = args.output
+	if dst == None:
+		dst = os.path.splitext(src)[0] + ".vgc"
+
+	# check for missing files
+	if not os.path.isfile(src):
+		print("ERROR: File '" + src + "' not found")
+		sys.exit()
+
+	packer = VgmPacker()
+	packer.VERBOSE = args.verbose
+	packer.process(src, dst, args.buffer, not args.nohuffman)
+
+
+
