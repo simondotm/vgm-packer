@@ -710,17 +710,17 @@ ENDIF
 ; on exit:
 ;    C is set if an update happened and Y contains last register value
 ;    C is clear if no updated happened and Y is preserved
-;    X contains register (0-7)
+;    X contains register provided in A on entry (0-7)
 
 .vgm_update_register1
 {
-    sta vgm_temp
     tax
     clc
     dec vgm_register_counts,x ; no effect on C
     bne skip_register_update
 
     ; decode a byte & send to psg
+    stx vgm_temp
     jsr vgm_get_register_data
     tay
     and #&0f
@@ -799,37 +799,36 @@ ENDIF
 .vgm_update
 {
     lda vgm_finished
-    bne done
+    bne exit
 
     ; SN76489 data register format is %1cctdddd where cc=channel, t=0=tone, t=1=volume, dddd=data
     ; The data is run length encoded.
     ; Get Channel 3 tone first because that contains the EOF marker
-    lda vgm_finished
-    bne exit
 
-.update
-    lda#3:jsr vgm_update_register1  ; Update Tone3, C clear if data changed
+    ; Update Tone3
+    lda#3:jsr vgm_update_register1  ; on exit C set if data changed, Y is last value
     bcc more_updates
+
     cpy #&08     ; EOF marker? (0x08 is an invalid tone 3 value)
-    bne more_updates
-    jsr sn_reset ; returns non-zero in A
-    lda #&ff
-    sta vgm_finished
-.exit
-    rts
+    beq finished
 
 .more_updates
-
     lda#7:jsr vgm_update_register1  ; Volume3
-    lda#0:jsr vgm_update_register2  ; Tone0
     lda#1:jsr vgm_update_register2  ; Tone1
     lda#2:jsr vgm_update_register2  ; Tone2
     lda#4:jsr vgm_update_register1  ; Volume0
     lda#5:jsr vgm_update_register1  ; Volume1
     lda#6:jsr vgm_update_register1  ; Volume2
-    lda vgm_finished
-.done
+    ; do tone0 last so we can use X output as the Zero return flag
+    lda#0:jsr vgm_update_register2  ; Tone0, returns 0 in X
+    txa ; return Z=0, still playing
+.exit
     rts
+
+.finished
+    ; end of tune reached. set flag & stop PSG
+    sty vgm_finished    ; any NZ value is fine, in this case 0x08
+    jmp sn_reset ; also returns non-zero in A
 }
 
 
