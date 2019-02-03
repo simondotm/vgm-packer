@@ -493,14 +493,16 @@ class VgmPacker:
 		#window = 255 # this is for 8-bit machines after all
 		lz4.setCompression(level)#, window)
 		# enable the high compression mode
-		if self.LZ48:
+		if buffersize < 256: #self.LZ48:
 			lz4.optimizedCompression(True)
 		else:
 			# high compression mode, requires 16Kb workspace but crunches like a boss.
-			if self.HIGH_COMPRESSION: 
-				windowsize = 2048
-				lz4.setCompression(level, windowsize)
-				lz4.optimizedCompression(False)
+			lz4.setCompression(level, buffersize)
+			lz4.optimizedCompression(False)
+			#if self.HIGH_COMPRESSION: 
+			#	windowsize = 2048
+			#	lz4.setCompression(level, windowsize)
+			#	lz4.optimizedCompression(False)
 
 
 
