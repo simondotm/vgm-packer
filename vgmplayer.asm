@@ -1016,13 +1016,15 @@ ENDIF
 
 
 .vgm_data
-INCBIN "testvgm/bbcapple.vgm.vgc"
-;INCBIN "testvgm/mongolia.vgm.vgc"
-;INCBIN "testvgm/things.vgm.vgc"
-;INCBIN "testvgm/lethal7.vgm.vgc"
-;INCBIN "testvgm/CPCTL10A.vgm.vgc"
-;INCBIN "testvgm/bestpart.vgm.vgc"
-;INCBIN "testvgm/tale7.vgm.vgc"
+INCBIN "testvgm/syner5.vgc"
+;INCBIN "testvgm/darkside1.vgc"
+;INCBIN "testvgm/bbcapple.vgc"
+;INCBIN "testvgm/mongolia.vgc"
+;INCBIN "testvgm/things.vgc"
+;INCBIN "testvgm/lethal7.vgc"
+;INCBIN "testvgm/CPCTL10A.vgc"
+;INCBIN "testvgm/bestpart.vgc"
+;INCBIN "testvgm/tale7.vgc"
 
 IF TEST_DATA
 .testdata
