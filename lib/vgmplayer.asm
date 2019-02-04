@@ -606,15 +606,13 @@ ENDIF ; USE_HUFFMAN
     stx vgm_finished
 .block_loop
  
-    ; get address of block, store in vgm_streams[x*8]
+    ; get start address of encoded data for vgm_stream[x] (block ptr+4)
     lda zp_block_data+0
     clc
     adc #4  ; skip block header
-    ;sta zp_block_data+0
     sta vgm_streams + NUM_VGM_STREAMS*0, x  ; zp_stream_src LO
     lda zp_block_data+1
     adc #0
-    ;sta zp_block_data+1
     sta vgm_streams + NUM_VGM_STREAMS*1, x  ; zp_stream_src HI
 
     ; init the rest
@@ -625,29 +623,20 @@ ENDIF ; USE_HUFFMAN
     sta vgm_streams + NUM_VGM_STREAMS*5, x  ; match cnt 
     sta vgm_streams + NUM_VGM_STREAMS*6, x  ; window src ptr 
     sta vgm_streams + NUM_VGM_STREAMS*7, x  ; window dst ptr 
-IF USE_TABLE16 ;USE_HUFFMAN
     sta vgm_streams + NUM_VGM_STREAMS*8, x  ; huff bitbuffer
     sta vgm_streams + NUM_VGM_STREAMS*9, x  ; huff bitsleft
-ENDIF
 
+    ; setup RLE tables
+    lda #1
+    sta vgm_register_counts, X
+
+    ; move to next block
     jsr vgm_next_block
 
     ; for all 8 blocks
-    txa
-    clc
-    adc #1 ;lz_zp_size
-    tax
-    cpx #8 ;*lz_zp_size
+    inx
+    cpx #8
     bne block_loop
-
-    ; setup RLE tables
-    ldx #7
-    lda #1
-.cloop
-    sta vgm_register_counts, X
-    dex
-    bpl cloop
-
     rts
 }
 
