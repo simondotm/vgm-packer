@@ -11,7 +11,7 @@ USE_HUFFMAN = TRUE
 
 USE_TABLE16 = TRUE ; only needed for huffman
 
-OPTIMIZE_WINDOW = FALSE
+OPTIMIZE_WINDOW = TRUE
 
 ;-------------------------------
 ; workspace/zeropage vars
@@ -26,8 +26,10 @@ zp_stream_src   = lz_zp + 0    ; stream data ptr LO/HI          *** ONLY USED 1-
 ; none of the following have to be zp for indirect addressing reasons.
 zp_literal_cnt  = lz_zp + 2    ; literal count LO/HI, 7 references
 zp_match_cnt    = lz_zp + 4    ; match count LO/HI, 10 references
+IF OPTIMIZE_WINDOW == FALSE
 zp_window_src   = lz_zp + 6    ; window read ptr - index, 3 references
 zp_window_dst   = lz_zp + 7    ; window write ptr - index, 3 references
+ENDIF
 
 IF USE_TABLE16 
 huff_bitbuffer  = lz_zp + 8    ; HUFF_ZP + 0   ; 1 byte, referenced by inner loop
@@ -83,14 +85,20 @@ ENDIF ; USE_HUFFMAN
 
 
 ; these variables are not preserved across context switches, can be any Zero page
+IF OPTIMIZE_WINDOW == FALSE
 zp_buffer = &6a ; lz_zp + 10          ; 2 bytes, current decode window buffer, used by lz_fetch_buffer and lz_store_buffer, must be zp
+ENDIF
+
 zp_temp = &6c ; lz_zp + 12           ; 2 bytes ; used only by lz_decode_byte and lz_fetch_count, does not need to be zp 
+
 zp_stash = &6e ;lz_zp + 14          ; 2 bytes ; used only by lz_decode_byte
 
 ; when mounting a VGM file we use these four variables as temporaries
 ; they are not speed or memory critical.
 ; they may need to be zero page due to indirect addressing
-zp_block_data = zp_buffer+0 ; must be zp
+zp_block_data = zp_stream_src ; re-uses zp_stream_src, must be zp ; zp_buffer+0 ; must be zp
+
+
 zp_block_size = zp_temp+0 ; does not need to be zp
 zp_symbol_table_size = zp_stash + 0 ; OPTIMIZATION - can be removed
 zp_length_table_size = zp_stash + 1 ; OPTIMIZATION - only used once, can be absolute memory temp

@@ -50,6 +50,13 @@ ENDIF
     rts                 ; [6] (1)
 }
 
+IF OPTIMIZE_WINDOW
+zp_window_src = lz_fetch_buffer + 1 ; window read ptr LO (2 bytes) - index, 3 references
+zp_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 references
+ENDIF
+
+
+
 ; Calculate a multi-byte lz4 style length into zp_temp
 ; On entry A contains the initial counter value (LO)
 ; Returns 16-bit length in A/X (A=LO, X=HI)
@@ -128,14 +135,14 @@ ENDIF
     ; set buffer read ptr
     sta zp_temp
 IF OPTIMIZE_WINDOW
-    lda lz_store_buffer + 1 ; *** SELF MODIFYING CODE *** (zp_window_dst)
+    lda zp_window_dst + 0 ; *** SELF MODIFYING CODE *** (zp_window_dst)
 ELSE
     lda zp_window_dst
 ENDIF
     sec
     sbc zp_temp
 IF OPTIMIZE_WINDOW 
-    sta lz_fetch_buffer + 1 ; *** SELF MODIFYING CODE *** (zp_window_src)
+    sta zp_window_src + 0 ; *** SELF MODIFYING CODE *** (zp_window_src)
 ELSE
     sta zp_window_src
 ENDIF
@@ -626,11 +633,11 @@ ENDIF ; USE_HUFFMAN
     clc
     adc #4  ; skip block header
     ;sta zp_block_data+0
-    sta vgm_streams + NUM_VGM_STREAMS*0, x
+    sta vgm_streams + NUM_VGM_STREAMS*0, x  ; zp_stream_src LO
     lda zp_block_data+1
     adc #0
     ;sta zp_block_data+1
-    sta vgm_streams + NUM_VGM_STREAMS*1, x
+    sta vgm_streams + NUM_VGM_STREAMS*1, x  ; zp_stream_src HI
 
     ; init the rest
     lda #0
@@ -677,10 +684,15 @@ ENDIF
     tax
     clc
     adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
+IF OPTIMIZE_WINDOW
+    sta zp_window_src+1
+    sta zp_window_dst+1
+ELSE
     sta zp_buffer+1
     lda #0
     sta zp_buffer+0
-    
+ENDIF
+
     ; calculate the stream buffer context
     stx loadX+1 ; Stash X for later *** SELF MODIFYING SEE BELOW ***
 
@@ -702,10 +714,10 @@ ENDIF
     sta zp_match_cnt + 1
 
     lda vgm_streams + NUM_VGM_STREAMS*6, x
-    sta zp_window_src
+    sta zp_window_src   ; **SELF MODIFY** not ZP
 
     lda vgm_streams + NUM_VGM_STREAMS*7, x
-    sta zp_window_dst
+    sta zp_window_dst   ; **SELF MODIFY** not ZP
 
     lda vgm_streams + NUM_VGM_STREAMS*8, x
     sta huff_bitbuffer
