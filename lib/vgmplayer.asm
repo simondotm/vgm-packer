@@ -24,11 +24,14 @@
 ; returns byte in A, clobbers Y
 .lz_fetch_buffer
 {
+IF OPTIMIZE_WINDOW
+    lda &ffff           ; *** SELF MODIFIED ***
+    inc lz_fetch_buffer+1
+ELSE
     ldy zp_window_src
     lda (zp_buffer),Y
     inc zp_window_src
-    ;iny
-    ;sty zp_window_src
+ENDIF
     rts
 }
 
@@ -36,11 +39,14 @@
 ; clobbers Y, preserves A
 .lz_store_buffer    ; called twice - 4 byte overhead, 6 byte function. Cheaper to inline.
 {
+IF OPTIMIZE_WINDOW
+    sta &ffff   ; *** SELF MODIFIED ***
+    inc lz_store_buffer+1
+ELSE
     ldy zp_window_dst   ; [3 zp, 4 abs] (2 zp, 3 abs)
     sta (zp_buffer),Y   ; [6]           (2)
     inc zp_window_dst   ; [5 zp, 4 abs] (2)
-    ;iny                 ; [2]           (1)
-    ;sty zp_window_dst   ; [3 zp, 4 abs] (2 zp, 3 abs)
+ENDIF
     rts                 ; [6] (1)
 }
 
@@ -61,9 +67,11 @@
     clc
     adc zp_temp+0
     sta zp_temp+0
-    lda zp_temp+1
-    adc #0
-    sta zp_temp+1
+
+    lda zp_temp+1   ; [3zp 4abs](2)
+    adc #0          ; [2](2)
+    sta zp_temp+1   ; [3zp 4abs](2)
+
     cpy #255            ; 255 signals byte extend       
     beq fetch
     tax
@@ -119,10 +127,18 @@
 
     ; set buffer read ptr
     sta zp_temp
+IF OPTIMIZE_WINDOW
+    lda lz_store_buffer + 1 ; *** SELF MODIFYING CODE *** (zp_window_dst)
+ELSE
     lda zp_window_dst
+ENDIF
     sec
     sbc zp_temp
+IF OPTIMIZE_WINDOW 
+    sta lz_fetch_buffer + 1 ; *** SELF MODIFYING CODE *** (zp_window_src)
+ELSE
     sta zp_window_src
+ENDIF
 
 IF LZ4_FORMAT
     ; fetch match offset HI, but ignore it.
@@ -659,6 +675,33 @@ ENDIF
 ;  no return value
 .vgm_load_register_context
 {
+IF OPTIMIZE_WORKSPACE
+    lda vgm_streams + 0, x
+    sta zp_stream_src + 0
+    lda vgm_streams + 1, x
+    sta zp_stream_src + 1
+
+    lda vgm_streams + 2, x
+    sta zp_literal_cnt + 0
+    lda vgm_streams + 3, x
+    sta zp_literal_cnt + 1
+
+    lda vgm_streams + 4, x
+    sta zp_match_cnt + 0
+    lda vgm_streams + 5, x
+    sta zp_match_cnt + 1
+
+    lda vgm_streams + 6, x
+    sta zp_window_src
+
+    lda vgm_streams + 7, x
+    sta zp_window_dst
+
+    lda vgm_streams + 8, x
+    sta huff_bitbuffer
+    lda vgm_streams + 9, x
+    sta huff_bitsleft
+ELSE
     ldy #0
 .loop
     lda vgm_streams, x
@@ -667,7 +710,10 @@ ENDIF
     iny
     cpy #lz_zp_size
     bne loop
+ENDIF
+
     rts
+
 }
 
 ; Save the current register stream context
@@ -676,6 +722,33 @@ ENDIF
 ;  no return value
 .vgm_save_register_context
 {
+IF OPTIMIZE_WORKSPACE
+    lda zp_stream_src + 0
+    sta vgm_streams + 0, x
+    lda zp_stream_src + 1
+    sta vgm_streams + 1, x
+
+    lda zp_literal_cnt + 0
+    sta vgm_streams + 2, x
+    lda zp_literal_cnt + 1
+    sta vgm_streams + 3, x
+
+    lda zp_match_cnt + 0
+    sta vgm_streams + 4, x
+    lda zp_match_cnt + 1
+    sta vgm_streams + 5, x
+
+    lda zp_window_src
+    sta vgm_streams + 6, x
+
+    lda zp_window_dst
+    sta vgm_streams + 7, x
+
+    lda huff_bitbuffer
+    sta vgm_streams + 8, x
+    lda huff_bitsleft
+    sta vgm_streams + 9, x
+ELSE
     ldy #0
 .loop
     lda lz_zp, y
@@ -683,7 +756,8 @@ ENDIF
     inx
     iny
     cpy #lz_zp_size
-    bne loop
+    bne loop    
+ENDIF
     rts    
 }
 
@@ -704,11 +778,13 @@ ENDIF
     txa
     
     ; calculate the stream buffer context
+IF TRUE
     asl a
     asl a
     asl a
 IF USE_TABLE16 ;USE_HUFFMAN
     asl a   ; *16 = lz_zp_size
+ENDIF
 ENDIF
     sta vgm_temp2
     tax

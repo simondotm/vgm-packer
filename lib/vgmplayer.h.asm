@@ -11,6 +11,9 @@ USE_HUFFMAN = TRUE
 
 USE_TABLE16 = TRUE ; only needed for huffman
 
+OPTIMIZE_WINDOW = FALSE
+OPTIMIZE_WORKSPACE = TRUE
+
 ;-------------------------------
 ; workspace/zeropage vars
 ;-------------------------------
@@ -90,3 +93,16 @@ zp_block_data = zp_buffer+0 ; must be zp
 zp_block_size = zp_temp+0 ; does not need to be zp
 zp_symbol_table_size = zp_stash + 0 ; OPTIMIZATION - can be removed
 zp_length_table_size = zp_stash + 1 ; OPTIMIZATION - only used once, can be absolute memory temp
+
+; OPTIMIZATIONS
+; Cheaper to store JSR huffman_fetch directly once per init, than check every byte?
+; Unroll the context copy loop
+; Make the context non contiguous so no need to *16 each stream
+; minimize context vars from 16 to <16
+
+
+; load/save the work buffer address directly per stream (no need for copy or zp indirect)
+;  also- inc buffer address directly too? this way copy back is free
+;   and no need for zp_window_src or zp_window_dst
+;   may even help us implement 16-bit offsets
+; reducing number of vars in context saves memory anyway, so 16*8 = 128 bytes
