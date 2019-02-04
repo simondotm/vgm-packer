@@ -668,13 +668,26 @@ ENDIF
     rts
 }
 
-
-; Select a register data stream where
-;  X is stream id (0-7) ;* lz_zp_size
-;  clobbers A,Y
-;  no return value
-.vgm_load_register_context
+;----------------------------------------------------------------------
+; fetch register data byte from register stream selected in A
+; This byte will be LZ4 encoded
+;  A is register id (0-7)
+;  clobbers X,Y
+.vgm_get_register_data
 {
+    ; set the LZ4 decoder stream workspace buffer (initialised by vgm_stream_mount)
+    tax
+    clc
+    adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
+    sta zp_buffer+1
+    lda #0
+    sta zp_buffer+0
+    
+    ; calculate the stream buffer context
+    stx vgm_temp2
+
+    ; since we have 8 separately compressed register streams
+    ; we have to load the required decoder context to ZP
     lda vgm_streams + NUM_VGM_STREAMS*0, x
     sta zp_stream_src + 0
     lda vgm_streams + NUM_VGM_STREAMS*1, x
@@ -700,16 +713,14 @@ ENDIF
     sta huff_bitbuffer
     lda vgm_streams + NUM_VGM_STREAMS*9, x
     sta huff_bitsleft
-    rts
 
-}
+    ; then fetch a decompressed byte
+    jsr lz_decode_byte
+    pha ; [3](1) faster than lda/sta 
 
-; Save the current register stream context
-;  X is stream id (0-7) * lz_zp_size
-;  clobbers A,Y
-;  no return value
-.vgm_save_register_context
-{
+    ; then we save the decoder context from ZP back to main ram
+    ldx vgm_temp2
+
     lda zp_stream_src + 0
     sta vgm_streams + NUM_VGM_STREAMS*0, x
     lda zp_stream_src + 1
@@ -735,48 +746,8 @@ ENDIF
     sta vgm_streams + NUM_VGM_STREAMS*8, x
     lda huff_bitsleft
     sta vgm_streams + NUM_VGM_STREAMS*9, x
-    rts    
-}
 
-;----------------------------------------------------------------------
-; fetch register data byte from register stream selected in A
-; This byte will be LZ4 encoded
-;  A is register id (0-7)
-;  clobbers X,Y
-.vgm_get_register_data
-{
-    ; set the LZ4 decoder stream workspace buffer (initialised by vgm_stream_mount)
-    tax
-    clc
-    adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
-    sta zp_buffer+1
-    lda #0
-    sta zp_buffer+0
-    txa
-    
-    ; calculate the stream buffer context
-IF FALSE
-    asl a
-    asl a
-    asl a
-IF USE_TABLE16 ;USE_HUFFMAN
-    asl a   ; *16 = lz_zp_size
-ENDIF
-ENDIF
-    sta vgm_temp2
-    tax
-
-    ; since we have 8 separately compressed register streams
-    ; we have to load the required decoder context to ZP
-    jsr vgm_load_register_context   ; TODO:inline
-
-    ; then fetch a decompressed byte
-    jsr lz_decode_byte
-    pha
-    ldx vgm_temp2
-    ; then we save the decoder context from ZP back to main ram
-    jsr vgm_save_register_context   ; TODO:inline
-    pla
+    pla ;[4](1)
     rts
 }
 
