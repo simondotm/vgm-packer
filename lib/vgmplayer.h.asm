@@ -12,7 +12,6 @@ USE_HUFFMAN = TRUE
 USE_TABLE16 = TRUE ; only needed for huffman
 
 OPTIMIZE_WINDOW = FALSE
-OPTIMIZE_WORKSPACE = TRUE
 
 ;-------------------------------
 ; workspace/zeropage vars
@@ -37,6 +36,8 @@ lz_zp_size = 16  ; number of bytes total workspace for a stream
 ELSE
 lz_zp_size = 8  ; number of bytes total workspace for a stream
 ENDIF
+
+NUM_VGM_STREAMS = 8
 
 IF USE_HUFFMAN
 

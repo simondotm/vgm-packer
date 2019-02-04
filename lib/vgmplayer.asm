@@ -437,7 +437,7 @@ ENDIF ; USE_HUFFMAN
 
 ;ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
-    skip  8*lz_zp_size
+    skip  NUM_VGM_STREAMS*lz_zp_size
     ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
     ;zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
     ;zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
@@ -625,23 +625,23 @@ ENDIF ; USE_HUFFMAN
     clc
     adc #4  ; skip block header
     ;sta zp_block_data+0
-    sta vgm_streams + 0, x
+    sta vgm_streams + NUM_VGM_STREAMS*0, x
     lda zp_block_data+1
     adc #0
     ;sta zp_block_data+1
-    sta vgm_streams + 1, x
+    sta vgm_streams + NUM_VGM_STREAMS*1, x
 
     ; init the rest
     lda #0
-    sta vgm_streams + 2, x  ; literal cnt 
-    sta vgm_streams + 3, x  ; literal cnt 
-    sta vgm_streams + 4, x  ; match cnt 
-    sta vgm_streams + 5, x  ; match cnt 
-    sta vgm_streams + 6, x  ; window src ptr 
-    sta vgm_streams + 7, x  ; window dst ptr 
+    sta vgm_streams + NUM_VGM_STREAMS*2, x  ; literal cnt 
+    sta vgm_streams + NUM_VGM_STREAMS*3, x  ; literal cnt 
+    sta vgm_streams + NUM_VGM_STREAMS*4, x  ; match cnt 
+    sta vgm_streams + NUM_VGM_STREAMS*5, x  ; match cnt 
+    sta vgm_streams + NUM_VGM_STREAMS*6, x  ; window src ptr 
+    sta vgm_streams + NUM_VGM_STREAMS*7, x  ; window dst ptr 
 IF USE_TABLE16 ;USE_HUFFMAN
-    sta vgm_streams + 8, x  ; huff bitbuffer
-    sta vgm_streams + 9, x  ; huff bitsleft
+    sta vgm_streams + NUM_VGM_STREAMS*8, x  ; huff bitbuffer
+    sta vgm_streams + NUM_VGM_STREAMS*9, x  ; huff bitsleft
 ENDIF
 
     jsr vgm_next_block
@@ -649,9 +649,9 @@ ENDIF
     ; for all 8 blocks
     txa
     clc
-    adc #lz_zp_size
+    adc #1 ;lz_zp_size
     tax
-    cpx #8*lz_zp_size
+    cpx #8 ;*lz_zp_size
     bne block_loop
 
     ; clear vgm finished flag
@@ -670,48 +670,36 @@ ENDIF
 
 
 ; Select a register data stream where
-;  X is stream id (0-7) * lz_zp_size
+;  X is stream id (0-7) ;* lz_zp_size
 ;  clobbers A,Y
 ;  no return value
 .vgm_load_register_context
 {
-IF OPTIMIZE_WORKSPACE
-    lda vgm_streams + 0, x
+    lda vgm_streams + NUM_VGM_STREAMS*0, x
     sta zp_stream_src + 0
-    lda vgm_streams + 1, x
+    lda vgm_streams + NUM_VGM_STREAMS*1, x
     sta zp_stream_src + 1
 
-    lda vgm_streams + 2, x
+    lda vgm_streams + NUM_VGM_STREAMS*2, x
     sta zp_literal_cnt + 0
-    lda vgm_streams + 3, x
+    lda vgm_streams + NUM_VGM_STREAMS*3, x
     sta zp_literal_cnt + 1
 
-    lda vgm_streams + 4, x
+    lda vgm_streams + NUM_VGM_STREAMS*4, x
     sta zp_match_cnt + 0
-    lda vgm_streams + 5, x
+    lda vgm_streams + NUM_VGM_STREAMS*5, x
     sta zp_match_cnt + 1
 
-    lda vgm_streams + 6, x
+    lda vgm_streams + NUM_VGM_STREAMS*6, x
     sta zp_window_src
 
-    lda vgm_streams + 7, x
+    lda vgm_streams + NUM_VGM_STREAMS*7, x
     sta zp_window_dst
 
-    lda vgm_streams + 8, x
+    lda vgm_streams + NUM_VGM_STREAMS*8, x
     sta huff_bitbuffer
-    lda vgm_streams + 9, x
+    lda vgm_streams + NUM_VGM_STREAMS*9, x
     sta huff_bitsleft
-ELSE
-    ldy #0
-.loop
-    lda vgm_streams, x
-    sta lz_zp, y
-    inx
-    iny
-    cpy #lz_zp_size
-    bne loop
-ENDIF
-
     rts
 
 }
@@ -722,42 +710,31 @@ ENDIF
 ;  no return value
 .vgm_save_register_context
 {
-IF OPTIMIZE_WORKSPACE
     lda zp_stream_src + 0
-    sta vgm_streams + 0, x
+    sta vgm_streams + NUM_VGM_STREAMS*0, x
     lda zp_stream_src + 1
-    sta vgm_streams + 1, x
+    sta vgm_streams + NUM_VGM_STREAMS*1, x
 
     lda zp_literal_cnt + 0
-    sta vgm_streams + 2, x
+    sta vgm_streams + NUM_VGM_STREAMS*2, x
     lda zp_literal_cnt + 1
-    sta vgm_streams + 3, x
+    sta vgm_streams + NUM_VGM_STREAMS*3, x
 
     lda zp_match_cnt + 0
-    sta vgm_streams + 4, x
+    sta vgm_streams + NUM_VGM_STREAMS*4, x
     lda zp_match_cnt + 1
-    sta vgm_streams + 5, x
+    sta vgm_streams + NUM_VGM_STREAMS*5, x
 
     lda zp_window_src
-    sta vgm_streams + 6, x
+    sta vgm_streams + NUM_VGM_STREAMS*6, x
 
     lda zp_window_dst
-    sta vgm_streams + 7, x
+    sta vgm_streams + NUM_VGM_STREAMS*7, x
 
     lda huff_bitbuffer
-    sta vgm_streams + 8, x
+    sta vgm_streams + NUM_VGM_STREAMS*8, x
     lda huff_bitsleft
-    sta vgm_streams + 9, x
-ELSE
-    ldy #0
-.loop
-    lda lz_zp, y
-    sta vgm_streams, x
-    inx
-    iny
-    cpy #lz_zp_size
-    bne loop    
-ENDIF
+    sta vgm_streams + NUM_VGM_STREAMS*9, x
     rts    
 }
 
@@ -778,7 +755,7 @@ ENDIF
     txa
     
     ; calculate the stream buffer context
-IF TRUE
+IF FALSE
     asl a
     asl a
     asl a
