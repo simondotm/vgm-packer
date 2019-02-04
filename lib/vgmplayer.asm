@@ -26,20 +26,22 @@
 {
     ldy zp_window_src
     lda (zp_buffer),Y
-    iny
-    sty zp_window_src
+    inc zp_window_src
+    ;iny
+    ;sty zp_window_src
     rts
 }
 
 ; push byte into decode buffer
 ; clobbers Y, preserves A
-.lz_store_buffer
+.lz_store_buffer    ; called twice - 4 byte overhead, 6 byte function. Cheaper to inline.
 {
-    ldy zp_window_dst
-    sta (zp_buffer),Y
-    iny
-    sty zp_window_dst
-    rts
+    ldy zp_window_dst   ; [3 zp, 4 abs] (2 zp, 3 abs)
+    sta (zp_buffer),Y   ; [6]           (2)
+    inc zp_window_dst   ; [5 zp, 4 abs] (2)
+    ;iny                 ; [2]           (1)
+    ;sty zp_window_dst   ; [3 zp, 4 abs] (2 zp, 3 abs)
+    rts                 ; [6] (1)
 }
 
 ; Calculate a multi-byte lz4 style length into zp_temp
@@ -48,11 +50,11 @@
 ; Clobbers Y, zp_temp+0, zp_temp+1
 .lz_fetch_count
 {
-    sta zp_temp+0
     ldx #0
-    stx zp_temp+1
     cmp #15             ; >=15 signals byte extend
     bne done
+    sta zp_temp+0
+    stx zp_temp+1
 .fetch
     jsr lz_fetch_byte
     tay
@@ -87,24 +89,24 @@
 ; try fetching a literal byte from the stream
 .try_literal
 
-    lda zp_literal_cnt+0
-    bne is_literal
-    lda zp_literal_cnt+1
-    beq try_match
+    lda zp_literal_cnt+0        ; [3 zp][4 abs]
+    bne is_literal              ; [2, +1, +2]
+    lda zp_literal_cnt+1        ; [3 zp][4 abs]
+    beq try_match               ; [2, +1, +2]
 
 .is_literal
 
     ; fetch a literal & stash in decode buffer
-    jsr lz_fetch_byte     
-    jsr lz_store_buffer
+    jsr lz_fetch_byte           ; [6] +6 RTS
+    jsr lz_store_buffer         ; [6] +6 RTS
     sta zp_stash
 
     ; for all literals
-    dec zp_literal_cnt+0
-    bne end_literal
-    lda zp_literal_cnt+1
-    beq begin_matches
-    dec zp_literal_cnt+1
+    dec zp_literal_cnt+0        ; [5 zp][6 abs]
+    bne end_literal             ; [2, +1, +2]
+    lda zp_literal_cnt+1        ; [3 zp][4 abs]
+    beq begin_matches           ; [2, +1, +2]
+    dec zp_literal_cnt+1        ; [5 zp][6 abs]
     bne end_literal
 
 .begin_matches
@@ -133,13 +135,26 @@ ENDIF
     jsr lz_fetch_count
     ; match length is always+4 (0=4)
     ; cant do this before because we need to detect 15
-    stx zp_match_cnt+1
-    clc
-    adc #4
-    sta zp_match_cnt+0
-    lda zp_match_cnt+1
-    adc #0
-    sta zp_match_cnt+1
+
+
+IF FALSE ; 13 bytes, 18 cycles
+    stx zp_match_cnt+1 ; [3 zp, 4 abs](2)
+    clc                ; [2](1)
+    adc #4             ; [2](2)
+    sta zp_match_cnt+0 ; [3 zp, 4 abs](2)
+    lda zp_match_cnt+1 ; [3 zp, 4 abs](2)
+    adc #0             ; [2](2)
+    sta zp_match_cnt+1 ; [3 zp, 4 abs](2)
+ELSE ; 12 bytes, 14-16 cycles
+    clc                  ; [2] (1)
+    adc #4               ; [2] (2)
+    sta zp_match_cnt+0   ; [3 zp, 4 abs] (2)
+    bcc store_hi         ; [2, +1, +2]    (2)
+    inx                  ; [2] (1)
+    ;inc zp_match_cnt+1  ; [5 zp, 6 abs]  (2)
+.store_hi
+    stx zp_match_cnt+1   ; [3 zp, 4 abs](2)
+ENDIF
 
 .end_literal
     lda zp_stash
@@ -196,7 +211,7 @@ ENDIF
     lsr a
     lsr a
 
-    ; fetch literal extended length
+    ; fetch literal extended length, passing in A
     jsr lz_fetch_count
     sta zp_literal_cnt+0
     stx zp_literal_cnt+1
@@ -225,8 +240,10 @@ ENDIF
 .lz_fetch_byte
 {
 IF USE_HUFFMAN == TRUE
-    bit vgm_flags
-    bmi huff_fetch_byte ; if bit7 set its a huffman stream
+    ; if bit7 of vgm_flags is set, its a huffman stream
+    bit vgm_flags        ; [3 zp, 4 abs] (2)
+    bmi huff_fetch_byte  ; [2, +1, +2] (2)
+    ; 
 ENDIF
     ; otherwise plain LZ4 byte fetch
     ldy #0
@@ -251,8 +268,10 @@ IF USE_HUFFMAN
 ; http://cbloomrants.blogspot.com/2010/08/08-11-10-huffman-arithmetic-equivalence.html
 ; 7 bits peek would require 2x 128 byte tables (256 bytes total extra to data stream).
 
+; other optimization ideas:
+; bitbuffer is filled at most twice per byte fetch.
 
-
+; this routine must be located within branch reach of lz_fetch_byte()
 .huff_fetch_byte
 {
     lda #0
@@ -268,7 +287,34 @@ IF USE_HUFFMAN
     ;sourceindex = 0
     ;unpacked = 0
     ;while unpacked < unpacked_size: # currentbyte < len(data):
+    ; skip over nextbit - this layout saves a jmp per bitlength
+    jmp decode_loop
+}
+.nextbit
+{
+    ; otherwise, move to the next bit length
+    ; firstCodeWithNumBits += numCodes
+    lda huff_firstcode + 0
+    clc
+    adc huff_numcodes
+    sta huff_firstcode + 0
+    lda huff_firstcode + 1
+    adc #0
+    sta huff_firstcode + 1
 
+    ; firstCodeWithNumBits <<= 1
+    asl huff_firstcode + 0
+    rol huff_firstcode + 1
+    
+    ; startIndexForCurrentNumBits += numCodes
+    lda huff_startindex
+    clc
+    adc huff_numcodes
+    sta huff_startindex
+    
+    ; keep going until we find a symbol
+    ;REMOVED: jmp decode_loop
+    ; falls into decode_loop
 }
 .decode_loop
 {
@@ -354,31 +400,7 @@ IF USE_HUFFMAN
     lda &FFFF, Y     ; ** MODIFIED ** See vgm_stream_mount
     rts
 }
-.nextbit
-{
-    ; otherwise, move to the next bit length
-    ; firstCodeWithNumBits += numCodes
-    lda huff_firstcode + 0
-    clc
-    adc huff_numcodes
-    sta huff_firstcode + 0
-    lda huff_firstcode + 1
-    adc #0
-    sta huff_firstcode + 1
 
-    ; firstCodeWithNumBits <<= 1
-    asl huff_firstcode + 0
-    rol huff_firstcode + 1
-    
-    ; startIndexForCurrentNumBits += numCodes
-    lda huff_startindex
-    clc
-    adc huff_numcodes
-    sta huff_startindex
-    
-    ; keep going until we find a symbol
-    jmp decode_loop
-}
 
 ENDIF ; USE_HUFFMAN
 
@@ -397,7 +419,7 @@ ENDIF ; USE_HUFFMAN
 ; local vgm workspace
 ;-------------------------------------------
 
-ALIGN 16 ; doesnt have to be aligned, just for debugging ease
+;ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
     skip  8*lz_zp_size
     ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
@@ -838,8 +860,7 @@ ENDIF
 
 PRINT "    decoder code size is", (decoder_end-decoder_start), "bytes"
 PRINT " vgm player code size is", (vgm_end-vgm_start), "bytes"
+PRINT "total vgm player size is", (decoder_end-decoder_start) + (vgm_end-vgm_start), "bytes"
 PRINT "      vgm buffer size is", (vgm_buffer_end-vgm_buffer_start), "bytes"
-
-PRINT "total vgm player size is", (vgm_buffer_end-vgm_buffer_start) + (decoder_end-decoder_start) + (vgm_end-vgm_start), "bytes"
 
 
