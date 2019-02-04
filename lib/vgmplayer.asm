@@ -503,8 +503,7 @@ ENDIF ; USE_HUFFMAN
 	lda #&9f : jsr sn_write
 	lda #&bf : jsr sn_write
 	lda #&df : jsr sn_write
-	lda #&ff : jsr sn_write
-	rts
+	lda #&ff : jmp sn_write
 }
 
 
@@ -618,6 +617,8 @@ ENDIF ; USE_HUFFMAN
 
     ; read the block headers (size)
     ldx #0
+    ; clear vgm finished flag
+    stx vgm_finished
 .block_loop
  
     ; get address of block, store in vgm_streams[x*8]
@@ -653,9 +654,6 @@ ENDIF
     tax
     cpx #8 ;*lz_zp_size
     bne block_loop
-
-    ; clear vgm finished flag
-    lda #0:sta vgm_finished
 
     ; setup RLE tables
     ldx #7
@@ -790,7 +788,9 @@ ENDIF
     ldx vgm_temp
     sta vgm_register_counts,x
     sec
+}
 .skip_register_update
+{
     rts
 }
 
@@ -798,17 +798,14 @@ ENDIF
 ; Same parameters as vgm_update_register1
 .vgm_update_register2
 {
-    jsr vgm_update_register1
+    jsr vgm_update_register1    ; returns stream in X if updated, and C=0 if no update needed
     bcc skip_register_update
 
     ; decode 2nd byte and send to psg as (DATA)
     txa
     jsr vgm_get_register_data
-    jsr sn_write ; clobbers X
-.skip_register_update
-    rts
+    jmp sn_write ; clobbers X
 }
-
 
 
 ;--------------------------------------------------
@@ -833,8 +830,7 @@ ENDIF
     jsr vgm_stream_mount
 
     ; reset soundchip
-    jsr sn_reset
-    rts
+    jmp sn_reset
 }
 
 ;-------------------------------------------
