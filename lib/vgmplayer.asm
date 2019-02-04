@@ -450,7 +450,7 @@ ENDIF ; USE_HUFFMAN
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 .vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
 .vgm_temp equb 0
-.vgm_temp2 equb 0 ; TODO:shared temp?
+
 
 
 ; 8 counters for VGM register update counters (RLE)
@@ -684,7 +684,7 @@ ENDIF
     sta zp_buffer+0
     
     ; calculate the stream buffer context
-    stx vgm_temp2
+    stx loadX+1 ; Stash X for later *** SELF MODIFYING SEE BELOW ***
 
     ; since we have 8 separately compressed register streams
     ; we have to load the required decoder context to ZP
@@ -716,10 +716,11 @@ ENDIF
 
     ; then fetch a decompressed byte
     jsr lz_decode_byte
-    pha ; [3](1) faster than lda/sta 
+    sta loadA+1 ; Stash A for later - ** SMOD ** [4](2) faster than pha/pla 
 
     ; then we save the decoder context from ZP back to main ram
-    ldx vgm_temp2
+.loadX
+    ldx #0  ; *** SELF MODIFIED ***
 
     lda zp_stream_src + 0
     sta vgm_streams + NUM_VGM_STREAMS*0, x
@@ -747,7 +748,8 @@ ENDIF
     lda huff_bitsleft
     sta vgm_streams + NUM_VGM_STREAMS*9, x
 
-    pla ;[4](1)
+.loadA
+    lda #0 ;[2](2) - ***SELF MODIFIED***
     rts
 }
 

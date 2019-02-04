@@ -97,8 +97,8 @@ zp_length_table_size = zp_stash + 1 ; OPTIMIZATION - only used once, can be abso
 
 ; OPTIMIZATIONS
 ; Cheaper to store JSR huffman_fetch directly once per init, than check every byte?
-; Unroll the context copy loop
-; Make the context non contiguous so no need to *16 each stream
+; [DONE] Unroll the context copy loop
+; [DONE] Make the context non contiguous so no need to *16 each stream
 ; minimize context vars from 16 to <16
 
 
