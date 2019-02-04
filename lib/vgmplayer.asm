@@ -24,14 +24,8 @@
 ; returns byte in A, clobbers Y
 .lz_fetch_buffer
 {
-IF OPTIMIZE_WINDOW
     lda &ffff           ; *** SELF MODIFIED ***
     inc lz_fetch_buffer+1
-ELSE
-    ldy zp_window_src
-    lda (zp_buffer),Y
-    inc zp_window_src
-ENDIF
     rts
 }
 
@@ -39,21 +33,13 @@ ENDIF
 ; clobbers Y, preserves A
 .lz_store_buffer    ; called twice - 4 byte overhead, 6 byte function. Cheaper to inline.
 {
-IF OPTIMIZE_WINDOW
     sta &ffff   ; *** SELF MODIFIED ***
     inc lz_store_buffer+1
-ELSE
-    ldy zp_window_dst   ; [3 zp, 4 abs] (2 zp, 3 abs)
-    sta (zp_buffer),Y   ; [6]           (2)
-    inc zp_window_dst   ; [5 zp, 4 abs] (2)
-ENDIF
     rts                 ; [6] (1)
 }
 
-IF OPTIMIZE_WINDOW
 zp_window_src = lz_fetch_buffer + 1 ; window read ptr LO (2 bytes) - index, 3 references
 zp_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 references
-ENDIF
 
 
 
@@ -134,18 +120,10 @@ ENDIF
 
     ; set buffer read ptr
     sta zp_temp
-IF OPTIMIZE_WINDOW
     lda zp_window_dst + 0 ; *** SELF MODIFYING CODE *** (zp_window_dst)
-ELSE
-    lda zp_window_dst
-ENDIF
     sec
     sbc zp_temp
-IF OPTIMIZE_WINDOW 
     sta zp_window_src + 0 ; *** SELF MODIFYING CODE *** (zp_window_src)
-ELSE
-    sta zp_window_src
-ENDIF
 
 IF LZ4_FORMAT
     ; fetch match offset HI, but ignore it.
@@ -683,15 +661,10 @@ ENDIF
     ; set the LZ4 decoder stream workspace buffer (initialised by vgm_stream_mount)
     tax
     clc
-    adc vgm_buffers ; hi byte of where the 2kb vgm stream buffer is located
-IF OPTIMIZE_WINDOW
-    sta zp_window_src+1
-    sta zp_window_dst+1
-ELSE
-    sta zp_buffer+1
-    lda #0
-    sta zp_buffer+0
-ENDIF
+    adc vgm_buffers ; hi byte of the base address of the 2Kb (8x256) vgm stream buffers
+    ; store hi byte of where the 256 byte vgm stream buffer for this stream is located
+    sta zp_window_src+1 ; **SELFMOD**
+    sta zp_window_dst+1 ; **SELFMOD**
 
     ; calculate the stream buffer context
     stx loadX+1 ; Stash X for later *** SELF MODIFYING SEE BELOW ***
