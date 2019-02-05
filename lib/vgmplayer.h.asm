@@ -9,14 +9,12 @@
 LZ4_FORMAT = FALSE
 USE_HUFFMAN = TRUE
 
-OPTIMIZE_WINDOW = TRUE
 
 ;-------------------------------
 ; workspace/zeropage vars
 ;-------------------------------
 
 VGM_ZP = &80
-
 
 ; declare zero page registers used for each compressed stream (they are context switched)
 lz_zp = VGM_ZP + 0
@@ -25,14 +23,10 @@ zp_stream_src   = lz_zp + 0    ; stream data ptr LO/HI          *** ONLY USED 1-
 zp_literal_cnt  = lz_zp + 2    ; literal count LO/HI, 7 references
 zp_match_cnt    = lz_zp + 4    ; match count LO/HI, 10 references
 ; huffman decoder stream context - CHECK:needs to be in ZP? prefix with zp if so
-huff_bitbuffer  = lz_zp + 6    ; HUFF_ZP + 0   ; 1 byte, referenced by inner loop
-huff_bitsleft   = lz_zp + 7    ; HUFF_ZP + 1   ; 1 byte, referenced by inner loop
+zp_huff_bitbuffer  = lz_zp + 6    ; huffman decoder bit buffer - 1 byte, referenced by inner loop
+zp_huff_bitsleft   = lz_zp + 7    ; huffman decoder bit buffer size - 1 byte, referenced by inner loop
 
-
-
-;lz_zp_size = 16  ; number of bytes total workspace for a stream
 VGM_STREAM_CONTEXT_SIZE = 10 ; number of bytes total workspace for a stream
-
 NUM_VGM_STREAMS = 8
 
 IF USE_HUFFMAN
@@ -75,16 +69,10 @@ huff_temp       = HUFF_ZP + 13 ; 2
 ENDIF ; USE_HUFFMAN
 
 
-; VGM player uses 11 zero page vars from this address
 
 
 ; these variables are not preserved across context switches, can be any Zero page
-IF OPTIMIZE_WINDOW == FALSE
-zp_buffer = &6a ; lz_zp + 10          ; 2 bytes, current decode window buffer, used by lz_fetch_buffer and lz_store_buffer, must be zp
-ENDIF
-
 zp_temp = &6c ; lz_zp + 12           ; 2 bytes ; used only by lz_decode_byte and lz_fetch_count, does not need to be zp 
-
 zp_stash = &6e ;lz_zp + 14          ; 2 bytes ; used only by lz_decode_byte
 
 ; when mounting a VGM file we use these four variables as temporaries

@@ -330,14 +330,14 @@ IF USE_HUFFMAN
     ;   numbitsbuffered += 8
 
 
-    lda huff_bitsleft
+    lda zp_huff_bitsleft
     bne got_bits
     ; fetch more bits
     ldy #0
     lda (huff_readptr), y
-    sta huff_bitbuffer
+    sta zp_huff_bitbuffer
     lda #8
-    sta huff_bitsleft
+    sta zp_huff_bitsleft
     inc huff_readptr + 0
     bne got_bits
     inc huff_readptr + 1
@@ -353,8 +353,8 @@ IF USE_HUFFMAN
     ;code_size += 1
 
     ; build code
-    dec huff_bitsleft
-    asl huff_bitbuffer           ; bit7 -> C
+    dec zp_huff_bitsleft
+    asl zp_huff_bitbuffer           ; bit7 -> C
     rol huff_code + 0       ; C -> bit0, bit7 -> C
     rol huff_code + 1       ; C -> bit8, bit15 -> C
     inc huff_codesize
@@ -423,13 +423,13 @@ ENDIF ; USE_HUFFMAN
 ;ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
     skip  NUM_VGM_STREAMS*VGM_STREAM_CONTEXT_SIZE
-    ; 0 zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
-    ; 2 zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
-    ; 4 zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
-    ; 6 lz_window_src   = VGM_ZP + 8    ; window read ptr - index
-    ; 7 lz_window_dst   = VGM_ZP + 9    ; window write ptr - index
-    ; 8 huff_bitbuffer  = lz_zp + 6    ; HUFF_ZP + 0   ; 1 byte, referenced by inner loop
-    ; 9 huff_bitsleft   = lz_zp + 7    ; HUFF_ZP + 1   ; 1 byte, referenced by inner loop
+    ; 0 zp_stream_src     ; stream data ptr LO/HI
+    ; 2 zp_literal_cnt    ; literal count LO/HI
+    ; 4 zp_match_cnt      ; match count LO/HI
+    ; 6 lz_window_src     ; window read ptr - index
+    ; 7 lz_window_dst     ; window write ptr - index
+    ; 8 zp_huff_bitbuffer ; 1 byte, referenced by inner loop
+    ; 9 huff_bitsleft     ; 1 byte, referenced by inner loop
 
 
 
@@ -684,9 +684,9 @@ ENDIF ; USE_HUFFMAN
     sta lz_window_dst   ; **SELF MODIFY** not ZP
 
     lda vgm_streams + NUM_VGM_STREAMS*8, x
-    sta huff_bitbuffer
+    sta zp_huff_bitbuffer
     lda vgm_streams + NUM_VGM_STREAMS*9, x
-    sta huff_bitsleft
+    sta zp_huff_bitsleft
 
     ; then fetch a decompressed byte
     jsr lz_decode_byte
@@ -717,9 +717,9 @@ ENDIF ; USE_HUFFMAN
     lda lz_window_dst
     sta vgm_streams + NUM_VGM_STREAMS*7, x
 
-    lda huff_bitbuffer
+    lda zp_huff_bitbuffer
     sta vgm_streams + NUM_VGM_STREAMS*8, x
-    lda huff_bitsleft
+    lda zp_huff_bitsleft
     sta vgm_streams + NUM_VGM_STREAMS*9, x
 
 .loadA
