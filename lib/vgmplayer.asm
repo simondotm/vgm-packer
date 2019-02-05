@@ -18,6 +18,15 @@
 ;  sn_write()
 ;--------------------------------------------------
 
+; Sound chip data from the vgm player
+IF ENABLE_VGM_FX
+.vgm_fx SKIP 11
+; first 8 bytes are:
+; tone0, tone1, tone2, tone3, vol0, vol1, vol2, vol3
+; next 3 bytes are:
+; tone0 HI, tone1 HI, tone2 HI
+ENDIF
+
 ;-------------------------------------------
 ; vgm_init
 ;-------------------------------------------
@@ -229,7 +238,7 @@ VGM_STREAMS = 8
     inc zp_block_data+1
 .no_block_hi
 
-IF USE_HUFFMAN
+IF ENABLE_HUFFMAN
     ; first block contains the bitlength and symbol tables
     bit vgm_flags
     bpl skip_hufftable
@@ -273,7 +282,7 @@ ENDIF
     jsr vgm_next_block
 
 .skip_hufftable
-ENDIF ; USE_HUFFMAN
+ENDIF ; ENABLE_HUFFMAN
 
 
     ; read the block headers (size)
@@ -314,7 +323,7 @@ ENDIF ; USE_HUFFMAN
     cpx #8
     bne block_loop
 
-IF USE_HUFFMAN
+IF ENABLE_HUFFMAN
 IF HUFFMAN_INLINE
     ; setup byte fetch routines to lz_fetch_byte or huff_fetch_byte
     ; depending if data file is huffman encoded or not
@@ -342,7 +351,7 @@ ENDIF
     stx fetchByte5+1
     sty fetchByte5+2
 ENDIF ; HUFFMAN_INLINE
-ENDIF ;USE_HUFFMAN    
+ENDIF ;ENABLE_HUFFMAN    
 
     rts
 }
@@ -452,6 +461,9 @@ ENDIF ;USE_HUFFMAN
     tay
     and #&0f
     ldx vgm_temp
+IF ENABLE_VGM_FX
+    sta vgm_fx,x ; store the register (0-7) setting in fx array
+ENDIF
     ora vgm_register_headers,x
     ; check if it's a tone3 skip command (&ef) before we play it
     ; - this prevents the LFSR being reset unnecessarily
@@ -486,6 +498,10 @@ ENDIF ;USE_HUFFMAN
     ; decode 2nd byte and send to psg as (DATA)
     txa
     jsr vgm_get_register_data
+IF ENABLE_VGM_FX
+    ldx vgm_temp ; still contains the stream id from previous call to vgm_update_register1()
+    sta vgm_fx+8,x ; store the register (0-2) setting for fx
+ENDIF    
     jmp sn_write ; clobbers X
 }
 
@@ -728,13 +744,13 @@ ENDIF
 ; returns byte in A, clobbers Y
 .lz_fetch_byte
 {
-IF USE_HUFFMAN == TRUE
+IF ENABLE_HUFFMAN == TRUE
 IF HUFFMAN_INLINE == FALSE
     ; if bit7 of vgm_flags is set, its a huffman stream
     bit vgm_flags        ; [3 zp, 4 abs] (2)
     bmi huff_fetch_byte  ; [2, +1, +2] (2) see below
 ENDIF ; HUFFMAN_INLINE
-ENDIF ; USE_HUFFMAN
+ENDIF ; ENABLE_HUFFMAN
 
     ; otherwise plain LZ4 byte fetch
     ldy #0
@@ -747,7 +763,7 @@ ENDIF ; USE_HUFFMAN
 }
 
 
-IF USE_HUFFMAN
+IF ENABLE_HUFFMAN
 
 ;-------------------------------
 ; huffman decoder routines
@@ -871,7 +887,7 @@ IF USE_HUFFMAN
 }
 
 
-ENDIF ; USE_HUFFMAN
+ENDIF ; ENABLE_HUFFMAN
 
 
 .decoder_end

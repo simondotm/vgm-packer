@@ -5,12 +5,14 @@
 ;******************************************************************
 
 
-; VGM player supports VGC files that are plain LZ4 or Huffman LZ4 if USE_HUFFMAN is TRUE
+; VGM player supports VGC files that are plain LZ4 or Huffman LZ4 if ENABLE_HUFFMAN is TRUE
 ; Huffman decoding is variable speed and requires more Zero page, so...
 ; For optimal performance & memory usage you can disable huffman support.
 ; (just make sure you compile your VGC files without huffman of course) 
-USE_HUFFMAN = TRUE
+ENABLE_HUFFMAN = TRUE
 
+; Enable this to capture the SN chip register settings (for fx etc.)
+ENABLE_VGM_FX = TRUE
 
 ;-------------------------------
 ; workspace/zeropage vars
@@ -32,7 +34,7 @@ zp_match_cnt    = lz_zp + 4    ; match count LO/HI, 10 references
 zp_temp = lz_zp + 6 ; 2 bytes ; used only by lz_decode_byte and lz_fetch_count, does not need to be zp apart from memory/speed reasons
 
 ; The following vars only apply if Huffman support is enabled
-IF USE_HUFFMAN
+IF ENABLE_HUFFMAN
 
 ; we re-use the LZ read ptr, since the huffman routine replaces the lz_fetch_byte
 huff_readptr    = zp_stream_src 
@@ -52,7 +54,7 @@ huff_codesize   = HUFF_ZP + 7 ; 1
 huff_index      = HUFF_ZP + 8 ; 2
 huff_numcodes   = HUFF_ZP + 10 ; 1
 
-ENDIF ; USE_HUFFMAN
+ENDIF ; ENABLE_HUFFMAN
 
 
 ; when mounting a VGM file we use these four variables as temporaries
