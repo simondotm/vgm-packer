@@ -5,6 +5,9 @@
 ;******************************************************************
 
 
+LZ4_FORMAT = FALSE ; legacy define. May get reactivated if we ever do the full lz4 support
+VGM_STREAM_CONTEXT_SIZE = 10 ; number of bytes total workspace for a stream
+VGM_STREAMS = 8
 
 ;---------------------------------------------------------------
 ; VGM library code
@@ -428,7 +431,7 @@ ENDIF ; USE_HUFFMAN
 
 ;ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
-    skip  NUM_VGM_STREAMS*VGM_STREAM_CONTEXT_SIZE
+    skip  VGM_STREAMS*VGM_STREAM_CONTEXT_SIZE
     ; 0 zp_stream_src     ; stream data ptr LO/HI
     ; 2 zp_literal_cnt    ; literal count LO/HI
     ; 4 zp_match_cnt      ; match count LO/HI
@@ -624,21 +627,21 @@ ENDIF ; USE_HUFFMAN
     lda zp_block_data+0
     clc
     adc #4  ; skip block header
-    sta vgm_streams + NUM_VGM_STREAMS*0, x  ; zp_stream_src LO
+    sta vgm_streams + VGM_STREAMS*0, x  ; zp_stream_src LO
     lda zp_block_data+1
     adc #0
-    sta vgm_streams + NUM_VGM_STREAMS*1, x  ; zp_stream_src HI
+    sta vgm_streams + VGM_STREAMS*1, x  ; zp_stream_src HI
 
     ; init the rest
     lda #0
-    sta vgm_streams + NUM_VGM_STREAMS*2, x  ; literal cnt 
-    sta vgm_streams + NUM_VGM_STREAMS*3, x  ; literal cnt 
-    sta vgm_streams + NUM_VGM_STREAMS*4, x  ; match cnt 
-    sta vgm_streams + NUM_VGM_STREAMS*5, x  ; match cnt 
-    sta vgm_streams + NUM_VGM_STREAMS*6, x  ; window src ptr 
-    sta vgm_streams + NUM_VGM_STREAMS*7, x  ; window dst ptr 
-    sta vgm_streams + NUM_VGM_STREAMS*8, x  ; huff bitbuffer
-    sta vgm_streams + NUM_VGM_STREAMS*9, x  ; huff bitsleft
+    sta vgm_streams + VGM_STREAMS*2, x  ; literal cnt 
+    sta vgm_streams + VGM_STREAMS*3, x  ; literal cnt 
+    sta vgm_streams + VGM_STREAMS*4, x  ; match cnt 
+    sta vgm_streams + VGM_STREAMS*5, x  ; match cnt 
+    sta vgm_streams + VGM_STREAMS*6, x  ; window src ptr 
+    sta vgm_streams + VGM_STREAMS*7, x  ; window dst ptr 
+    sta vgm_streams + VGM_STREAMS*8, x  ; huff bitbuffer
+    sta vgm_streams + VGM_STREAMS*9, x  ; huff bitsleft
 
     ; setup RLE tables
     lda #1
@@ -703,30 +706,30 @@ ENDIF ;USE_HUFFMAN
 
     ; since we have 8 separately compressed register streams
     ; we have to load the required decoder context to ZP
-    lda vgm_streams + NUM_VGM_STREAMS*0, x
+    lda vgm_streams + VGM_STREAMS*0, x
     sta zp_stream_src + 0
-    lda vgm_streams + NUM_VGM_STREAMS*1, x
+    lda vgm_streams + VGM_STREAMS*1, x
     sta zp_stream_src + 1
 
-    lda vgm_streams + NUM_VGM_STREAMS*2, x
+    lda vgm_streams + VGM_STREAMS*2, x
     sta zp_literal_cnt + 0
-    lda vgm_streams + NUM_VGM_STREAMS*3, x
+    lda vgm_streams + VGM_STREAMS*3, x
     sta zp_literal_cnt + 1
 
-    lda vgm_streams + NUM_VGM_STREAMS*4, x
+    lda vgm_streams + VGM_STREAMS*4, x
     sta zp_match_cnt + 0
-    lda vgm_streams + NUM_VGM_STREAMS*5, x
+    lda vgm_streams + VGM_STREAMS*5, x
     sta zp_match_cnt + 1
 
-    lda vgm_streams + NUM_VGM_STREAMS*6, x
+    lda vgm_streams + VGM_STREAMS*6, x
     sta lz_window_src   ; **SELF MODIFY** not ZP
 
-    lda vgm_streams + NUM_VGM_STREAMS*7, x
+    lda vgm_streams + VGM_STREAMS*7, x
     sta lz_window_dst   ; **SELF MODIFY** not ZP
 
-    lda vgm_streams + NUM_VGM_STREAMS*8, x
+    lda vgm_streams + VGM_STREAMS*8, x
     sta zp_huff_bitbuffer
-    lda vgm_streams + NUM_VGM_STREAMS*9, x
+    lda vgm_streams + VGM_STREAMS*9, x
     sta zp_huff_bitsleft
 
     ; then fetch a decompressed byte
@@ -738,30 +741,30 @@ ENDIF ;USE_HUFFMAN
     ldx #0  ; *** SELF MODIFIED - See above ***
 
     lda zp_stream_src + 0
-    sta vgm_streams + NUM_VGM_STREAMS*0, x
+    sta vgm_streams + VGM_STREAMS*0, x
     lda zp_stream_src + 1
-    sta vgm_streams + NUM_VGM_STREAMS*1, x
+    sta vgm_streams + VGM_STREAMS*1, x
 
     lda zp_literal_cnt + 0
-    sta vgm_streams + NUM_VGM_STREAMS*2, x
+    sta vgm_streams + VGM_STREAMS*2, x
     lda zp_literal_cnt + 1
-    sta vgm_streams + NUM_VGM_STREAMS*3, x
+    sta vgm_streams + VGM_STREAMS*3, x
 
     lda zp_match_cnt + 0
-    sta vgm_streams + NUM_VGM_STREAMS*4, x
+    sta vgm_streams + VGM_STREAMS*4, x
     lda zp_match_cnt + 1
-    sta vgm_streams + NUM_VGM_STREAMS*5, x
+    sta vgm_streams + VGM_STREAMS*5, x
 
     lda lz_window_src
-    sta vgm_streams + NUM_VGM_STREAMS*6, x
+    sta vgm_streams + VGM_STREAMS*6, x
 
     lda lz_window_dst
-    sta vgm_streams + NUM_VGM_STREAMS*7, x
+    sta vgm_streams + VGM_STREAMS*7, x
 
     lda zp_huff_bitbuffer
-    sta vgm_streams + NUM_VGM_STREAMS*8, x
+    sta vgm_streams + VGM_STREAMS*8, x
     lda zp_huff_bitsleft
-    sta vgm_streams + NUM_VGM_STREAMS*9, x
+    sta vgm_streams + VGM_STREAMS*9, x
 
 .loadA
     lda #0 ;[2](2) - ***SELF MODIFIED - See above ***
