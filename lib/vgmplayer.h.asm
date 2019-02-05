@@ -7,7 +7,7 @@
 
 
 LZ4_FORMAT = FALSE
-USE_HUFFMAN = TRUE
+USE_HUFFMAN = FALSE
 
 
 ;-------------------------------
@@ -27,7 +27,7 @@ zp_huff_bitbuffer  = lz_zp + 6    ; huffman decoder bit buffer - 1 byte, referen
 zp_huff_bitsleft   = lz_zp + 7    ; huffman decoder bit buffer size - 1 byte, referenced by inner loop
 
 ; these variables are not preserved across context switches, can be any Zero page
-zp_temp = lz_zp + 8 ; 2 bytes ; used only by lz_decode_byte and lz_fetch_count, does not need to be zp 
+zp_temp = lz_zp + 8 ; 2 bytes ; used only by lz_decode_byte and lz_fetch_count, does not need to be zp apart from memory/speed reasons
 
 
 
@@ -71,7 +71,6 @@ huff_startindex = HUFF_ZP + 4 ; 1
 huff_codesize   = HUFF_ZP + 5 ; 1
 huff_index      = HUFF_ZP + 6 ; 2
 huff_numcodes   = HUFF_ZP + 8 ; 1
-huff_temp       = HUFF_ZP + 9 ; 2
 
 ENDIF ; USE_HUFFMAN
 

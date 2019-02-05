@@ -49,13 +49,16 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
 ; Returns 16-bit length in A/X (A=LO, X=HI)
 ; Clobbers Y, zp_temp+0, zp_temp+1
 .lz_fetch_count
-{
+
     ldx #0
     cmp #15             ; >=15 signals byte extend
-    bne done
+    bne lz_fetch_count_done
     sta zp_temp+0
     stx zp_temp+1
+
 .fetch
+.fetchByte1
+
     jsr lz_fetch_byte
     tay
     clc
@@ -70,16 +73,21 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
     beq fetch
     tax
     lda zp_temp+0
-.done
+
+.lz_fetch_count_done
+
     ; A/X now contain count (LO/HI)
     rts
-}
+
+
+
+
 
 ; decode a byte from the currently selected register stream
 ; unlike typical lz style unpackers we are using a state machine
 ; because it is necessary for us to be able to decode a byte at a time from 8 separate streams
 .lz_decode_byte
-{
+
     ; decoder state is:
     ;  empty - fetch new token & prepare
     ;  literal - decode new literal
@@ -97,6 +105,7 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
     beq try_match               ; [2, +1, +2]
 
 .is_literal
+.fetchByte2
 
     ; fetch a literal & stash in decode buffer
     jsr lz_fetch_byte           ; [6] +6 RTS
@@ -116,6 +125,8 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
     ; literals run completed
     ; now fetch match offset & length
 
+.fetchByte3
+
     ; get match offset LO
     jsr lz_fetch_byte     
 
@@ -132,6 +143,7 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
 IF LZ4_FORMAT
     ; fetch match offset HI, but ignore it.
     ; this implementation only supports 8-bit windows.
+.fetchByte4
     jsr lz_fetch_byte    
 ENDIF
 
@@ -187,8 +199,7 @@ ENDIF
 
 ; then token parser
 .try_token
-
-
+.fetchByte5
     ; fetch a token
     jsr lz_fetch_byte     
 
@@ -224,7 +235,7 @@ ENDIF
     ; ok now go back to literal parser so we can return a byte
     ; if no literals, logic will fall through to matches
     jmp try_literal
-}
+
 
 
 
@@ -235,12 +246,12 @@ ENDIF
 ; returns byte in A, clobbers Y
 .lz_fetch_byte
 {
-IF USE_HUFFMAN == TRUE
-    ; if bit7 of vgm_flags is set, its a huffman stream
-    bit vgm_flags        ; [3 zp, 4 abs] (2)
-    bmi huff_fetch_byte  ; [2, +1, +2] (2)
-    ; 
-ENDIF
+;IF USE_HUFFMAN == TRUE
+;    ; if bit7 of vgm_flags is set, its a huffman stream
+;    bit vgm_flags        ; [3 zp, 4 abs] (2)
+;    bmi huff_fetch_byte  ; [2, +1, +2] (2) see below
+;    ; 
+;ENDIF
     ; otherwise plain LZ4 byte fetch
     ldy #0
     lda (zp_stream_src),y
@@ -640,6 +651,35 @@ ENDIF ; USE_HUFFMAN
     inx
     cpx #8
     bne block_loop
+
+IF USE_HUFFMAN == TRUE
+    ; setup byte fetch routines to lz_fetch_byte or huff_fetch_byte
+    ; depending if data file is huffman encoded or not
+    ; default compilation is lz_fetch_byte, so this code is not needed if HUFFMAN disabled
+    ldx #lo(lz_fetch_byte)
+    ldy #hi(lz_fetch_byte)
+
+    ; if bit7 of vgm_flags is set, its a huffman stream
+    bit vgm_flags        ; [3 zp, 4 abs] (2)
+    bpl no_huffman  ; [2, +1, +2] (2)
+    
+    ldx #lo(huff_fetch_byte)
+    ldy #hi(huff_fetch_byte)
+.no_huffman
+    stx fetchByte1+1
+    sty fetchByte1+2
+    stx fetchByte2+1
+    sty fetchByte2+2
+    sty fetchByte3+2
+    stx fetchByte3+1
+IF LZ4_FORMAT
+    stx fetchByte4+1
+    sty fetchByte4+2
+ENDIF
+    stx fetchByte5+1
+    sty fetchByte5+2
+ENDIF ;USE_HUFFMAN    
+
     rts
 }
 
