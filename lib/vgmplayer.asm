@@ -100,7 +100,8 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
     ; fetch a literal & stash in decode buffer
     jsr lz_fetch_byte           ; [6] +6 RTS
     jsr lz_store_buffer         ; [6] +6 RTS
-    sta zp_stash
+    sta stashA+1   ; **SELF MODIFICATION**
+    ;sta zp_stash
 
     ; for all literals
     dec zp_literal_cnt+0        ; [5 zp][6 abs]
@@ -119,10 +120,13 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
     jsr lz_fetch_byte     
 
     ; set buffer read ptr
-    sta zp_temp
+    ;sta zp_temp
+    sta stashS+1 ; **SELF MODIFICATION**
     lda lz_window_dst + 0 ; *** SELF MODIFYING CODE ***
     sec
-    sbc zp_temp
+.stashS
+    sbc #0 ; **SELFMODIFIED**
+    ;sbc zp_temp
     sta lz_window_src + 0 ; *** SELF MODIFYING CODE ***
 
 IF LZ4_FORMAT
@@ -137,16 +141,6 @@ ENDIF
     ; match length is always+4 (0=4)
     ; cant do this before because we need to detect 15
 
-
-IF FALSE ; 13 bytes, 18 cycles
-    stx zp_match_cnt+1 ; [3 zp, 4 abs](2)
-    clc                ; [2](1)
-    adc #4             ; [2](2)
-    sta zp_match_cnt+0 ; [3 zp, 4 abs](2)
-    lda zp_match_cnt+1 ; [3 zp, 4 abs](2)
-    adc #0             ; [2](2)
-    sta zp_match_cnt+1 ; [3 zp, 4 abs](2)
-ELSE ; 12 bytes, 14-16 cycles
     clc                  ; [2] (1)
     adc #4               ; [2] (2)
     sta zp_match_cnt+0   ; [3 zp, 4 abs] (2)
@@ -155,10 +149,11 @@ ELSE ; 12 bytes, 14-16 cycles
     ;inc zp_match_cnt+1  ; [5 zp, 6 abs]  (2)
 .store_hi
     stx zp_match_cnt+1   ; [3 zp, 4 abs](2)
-ENDIF
 
 .end_literal
-    lda zp_stash
+.stashA
+    lda #0 ;**SELFMODIFIED - See above**
+    ;lda zp_stash
     rts
 
 
@@ -175,7 +170,8 @@ ENDIF
 
     jsr lz_fetch_buffer    ; fetch matched byte from decode buffer
     jsr lz_store_buffer    ; stash in decode buffer
-    sta zp_stash
+    sta stashAA+1 ; **SELF MODIFICATION**
+    ;sta zp_stash
 
     ; for all matches
     ; we know match cnt is at least 1
@@ -186,7 +182,9 @@ ENDIF
     dec zp_match_cnt+0
 
 .end_match
-    lda zp_stash
+.stashAA
+    lda #0 ; **SELF MODIFIED - See above **
+    ;lda zp_stash
     rts
 
 
