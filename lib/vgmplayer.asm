@@ -38,6 +38,7 @@
     rts                 ; [6] (1)
 }
 
+; provide these vars as cleaner addresses for the code address to be self modified
 lz_window_src = lz_fetch_buffer + 1 ; window read ptr LO (2 bytes) - index, 3 references
 lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 references
 
@@ -101,7 +102,6 @@ lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
     jsr lz_fetch_byte           ; [6] +6 RTS
     jsr lz_store_buffer         ; [6] +6 RTS
     sta stashA+1   ; **SELF MODIFICATION**
-    ;sta zp_stash
 
     ; for all literals
     dec zp_literal_cnt+0        ; [5 zp][6 abs]
@@ -153,7 +153,6 @@ ENDIF
 .end_literal
 .stashA
     lda #0 ;**SELFMODIFIED - See above**
-    ;lda zp_stash
     rts
 
 
@@ -171,7 +170,6 @@ ENDIF
     jsr lz_fetch_buffer    ; fetch matched byte from decode buffer
     jsr lz_store_buffer    ; stash in decode buffer
     sta stashAA+1 ; **SELF MODIFICATION**
-    ;sta zp_stash
 
     ; for all matches
     ; we know match cnt is at least 1
@@ -184,7 +182,6 @@ ENDIF
 .end_match
 .stashAA
     lda #0 ; **SELF MODIFIED - See above **
-    ;lda zp_stash
     rts
 
 
@@ -556,10 +553,9 @@ ENDIF ; USE_HUFFMAN
     clc
     adc #7
     sta zp_block_data+0
-    lda zp_block_data+1
-    adc #0
-    sta zp_block_data+1
-
+    bcc no_block_hi
+    inc zp_block_data+1
+.no_block_hi
 
 IF USE_HUFFMAN
     ; first block contains the bitlength and symbol tables
@@ -577,10 +573,8 @@ ELSE
     ldy #9
 ENDIF
     lda (zp_block_data),Y   ; bitlength table size
-    ;sta zp_length_table_size    
-    ;inc zp_length_table_size    
-    ; compensate for the first byte (range is 0-nbits inclusive), value always < 254
     sta stashLengthTableSize+1 ; **SELF MODIFYING**
+    ; compensate for the first byte (range is 0-nbits inclusive), value always < 254
     inc stashLengthTableSize+1 ; **SELF-MODIFYING**
 
     ; store the address of the bitlengths table directly in the huff_fetch_byte routine
@@ -596,7 +590,6 @@ ENDIF
     lda LOAD_LENGTH_TABLE + 1
     clc
 .stashLengthTableSize
-    ;adc zp_length_table_size
     adc #0 ; length table size **SELF MODIFIED - see above **
     sta LOAD_SYMBOL_TABLE + 1   ; ** SELF MODIFICATION ***
     lda LOAD_LENGTH_TABLE + 2
