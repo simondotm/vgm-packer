@@ -17,8 +17,7 @@ GUARD &8f
 
 INCLUDE "lib/vgmplayer.h.asm"
 
-.fx_temp SKIP 2
-.fx_temp1 SKIP 1
+
 .zp_end
 
 
@@ -59,11 +58,6 @@ ALIGN 256
 
 .main
 {
-    lda #22
-    jsr &ffee
-    lda #7
-    jsr &ffee
-
     ; initialize the vgm player with a vgc data stream
     lda #hi(vgm_stream_buffers)
     ldx #lo(vgm_data)
@@ -102,6 +96,7 @@ ENDIF
 
 INCLUDE "lib/vgmplayer.asm"
 
+; include your tune of choice here, some samples provided....
 .vgm_data
 INCBIN "testvgm/ym_009.vgc"
 ;INCBIN "testvgm/song_091.vgc"
