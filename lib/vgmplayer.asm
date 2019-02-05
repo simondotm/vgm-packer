@@ -38,8 +38,8 @@
     rts                 ; [6] (1)
 }
 
-zp_window_src = lz_fetch_buffer + 1 ; window read ptr LO (2 bytes) - index, 3 references
-zp_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 references
+lz_window_src = lz_fetch_buffer + 1 ; window read ptr LO (2 bytes) - index, 3 references
+lz_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 references
 
 
 
@@ -120,10 +120,10 @@ zp_window_dst = lz_store_buffer + 1 ; window write ptr LO (2 bytes) - index, 3 r
 
     ; set buffer read ptr
     sta zp_temp
-    lda zp_window_dst + 0 ; *** SELF MODIFYING CODE *** (zp_window_dst)
+    lda lz_window_dst + 0 ; *** SELF MODIFYING CODE ***
     sec
     sbc zp_temp
-    sta zp_window_src + 0 ; *** SELF MODIFYING CODE *** (zp_window_src)
+    sta lz_window_src + 0 ; *** SELF MODIFYING CODE ***
 
 IF LZ4_FORMAT
     ; fetch match offset HI, but ignore it.
@@ -422,12 +422,14 @@ ENDIF ; USE_HUFFMAN
 
 ;ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
-    skip  NUM_VGM_STREAMS*lz_zp_size
-    ;zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
-    ;zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
-    ;zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
-    ;zp_window_src   = VGM_ZP + 6    ; window read ptr - index
-    ;zp_window_dst   = VGM_ZP + 7    ; window write ptr - index
+    skip  NUM_VGM_STREAMS*VGM_STREAM_CONTEXT_SIZE
+    ; 0 zp_stream_src   = VGM_ZP + 0    ; stream data ptr LO/HI
+    ; 2 zp_literal_cnt  = VGM_ZP + 2    ; literal count LO/HI
+    ; 4 zp_match_cnt    = VGM_ZP + 4    ; match count LO/HI
+    ; 6 lz_window_src   = VGM_ZP + 8    ; window read ptr - index
+    ; 7 lz_window_dst   = VGM_ZP + 9    ; window write ptr - index
+    ; 8 huff_bitbuffer  = lz_zp + 6    ; HUFF_ZP + 0   ; 1 byte, referenced by inner loop
+    ; 9 huff_bitsleft   = lz_zp + 7    ; HUFF_ZP + 1   ; 1 byte, referenced by inner loop
 
 
 
@@ -652,8 +654,8 @@ ENDIF ; USE_HUFFMAN
     clc
     adc vgm_buffers ; hi byte of the base address of the 2Kb (8x256) vgm stream buffers
     ; store hi byte of where the 256 byte vgm stream buffer for this stream is located
-    sta zp_window_src+1 ; **SELFMOD**
-    sta zp_window_dst+1 ; **SELFMOD**
+    sta lz_window_src+1 ; **SELFMOD**
+    sta lz_window_dst+1 ; **SELFMOD**
 
     ; calculate the stream buffer context
     stx loadX+1 ; Stash X for later *** SELF MODIFYING SEE BELOW ***
@@ -676,10 +678,10 @@ ENDIF ; USE_HUFFMAN
     sta zp_match_cnt + 1
 
     lda vgm_streams + NUM_VGM_STREAMS*6, x
-    sta zp_window_src   ; **SELF MODIFY** not ZP
+    sta lz_window_src   ; **SELF MODIFY** not ZP
 
     lda vgm_streams + NUM_VGM_STREAMS*7, x
-    sta zp_window_dst   ; **SELF MODIFY** not ZP
+    sta lz_window_dst   ; **SELF MODIFY** not ZP
 
     lda vgm_streams + NUM_VGM_STREAMS*8, x
     sta huff_bitbuffer
@@ -692,7 +694,7 @@ ENDIF ; USE_HUFFMAN
 
     ; then we save the decoder context from ZP back to main ram
 .loadX
-    ldx #0  ; *** SELF MODIFIED ***
+    ldx #0  ; *** SELF MODIFIED - See above ***
 
     lda zp_stream_src + 0
     sta vgm_streams + NUM_VGM_STREAMS*0, x
@@ -709,10 +711,10 @@ ENDIF ; USE_HUFFMAN
     lda zp_match_cnt + 1
     sta vgm_streams + NUM_VGM_STREAMS*5, x
 
-    lda zp_window_src
+    lda lz_window_src
     sta vgm_streams + NUM_VGM_STREAMS*6, x
 
-    lda zp_window_dst
+    lda lz_window_dst
     sta vgm_streams + NUM_VGM_STREAMS*7, x
 
     lda huff_bitbuffer
@@ -721,7 +723,7 @@ ENDIF ; USE_HUFFMAN
     sta vgm_streams + NUM_VGM_STREAMS*9, x
 
 .loadA
-    lda #0 ;[2](2) - ***SELF MODIFIED***
+    lda #0 ;[2](2) - ***SELF MODIFIED - See above ***
     rts
 }
 
@@ -747,6 +749,7 @@ ENDIF ; USE_HUFFMAN
     ldx vgm_temp
     ora vgm_register_headers,x
     ; check if it's a tone3 skip command (&ef) before we play it
+    ; - this prevents the LFSR being reset unnecessarily
     cmp #&ef
     beq skip_tone3
     jsr sn_write ; clobbers X

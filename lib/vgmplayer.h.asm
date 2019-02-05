@@ -9,8 +9,6 @@
 LZ4_FORMAT = FALSE
 USE_HUFFMAN = TRUE
 
-USE_TABLE16 = TRUE ; only needed for huffman
-
 OPTIMIZE_WINDOW = TRUE
 
 ;-------------------------------
@@ -26,18 +24,14 @@ zp_stream_src   = lz_zp + 0    ; stream data ptr LO/HI          *** ONLY USED 1-
 ; none of the following have to be zp for indirect addressing reasons.
 zp_literal_cnt  = lz_zp + 2    ; literal count LO/HI, 7 references
 zp_match_cnt    = lz_zp + 4    ; match count LO/HI, 10 references
-IF OPTIMIZE_WINDOW == FALSE
-zp_window_src   = lz_zp + 6    ; window read ptr - index, 3 references
-zp_window_dst   = lz_zp + 7    ; window write ptr - index, 3 references
-ENDIF
+; huffman decoder stream context - CHECK:needs to be in ZP? prefix with zp if so
+huff_bitbuffer  = lz_zp + 6    ; HUFF_ZP + 0   ; 1 byte, referenced by inner loop
+huff_bitsleft   = lz_zp + 7    ; HUFF_ZP + 1   ; 1 byte, referenced by inner loop
 
-IF USE_TABLE16 
-huff_bitbuffer  = lz_zp + 8    ; HUFF_ZP + 0   ; 1 byte, referenced by inner loop
-huff_bitsleft   = lz_zp + 9    ; HUFF_ZP + 1   ; 1 byte, referenced by inner loop
-lz_zp_size = 16  ; number of bytes total workspace for a stream
-ELSE
-lz_zp_size = 8  ; number of bytes total workspace for a stream
-ENDIF
+
+
+;lz_zp_size = 16  ; number of bytes total workspace for a stream
+VGM_STREAM_CONTEXT_SIZE = 10 ; number of bytes total workspace for a stream
 
 NUM_VGM_STREAMS = 8
 
