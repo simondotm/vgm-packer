@@ -22,9 +22,9 @@
 IF ENABLE_VGM_FX
 .vgm_fx SKIP 11
 ; first 8 bytes are:
-; tone0, tone1, tone2, tone3, vol0, vol1, vol2, vol3
+; tone0 LO, tone1 LO, tone2 LO, tone3, vol0, vol1, vol2, vol3 (all 4-bit values)
 ; next 3 bytes are:
-; tone0 HI, tone1 HI, tone2 HI
+; tone0 HI, tone1 HI, tone2 HI (all 6-bit values)
 ENDIF
 
 ;-------------------------------------------
@@ -33,17 +33,21 @@ ENDIF
 ; Initialise playback routine
 ;  A points to HI byte of a page aligned 2Kb RAM buffer address
 ;  X/Y point to the VGC data stream to be played
+;  C=1 for looped playback
 ;-------------------------------------------
 .vgm_init
 {
     ; stash the 2kb buffer address
     sta vgm_buffers
-
+    lda #0
+    ror a  ; move carry into A
+    sta vgm_loop
+ 
+    ; stash the data source addr for looping
+    stx vgm_source+0
+    sty vgm_source+1
     ; Prepare the data for streaming (passed in X/Y)
-    jsr vgm_stream_mount
-
-    ; reset soundchip
-    jmp sn_reset
+    jmp vgm_stream_mount
 }
 
 ;-------------------------------------------
@@ -51,6 +55,7 @@ ENDIF
 ;-------------------------------------------
 ;  call every 50Hz to play music
 ;  vgm_init must be called prior to this
+; On entry A is non-zero if the music should be looped
 ;  returns non-zero when VGM is finished.
 ;-------------------------------------------
 .vgm_update
@@ -83,7 +88,19 @@ ENDIF
     rts
 
 .finished
-    ; end of tune reached. set flag & stop PSG
+    ; end of tune reached
+    lda vgm_loop
+    beq no_looping
+    ; restart if looping
+    ldx vgm_source+0
+    ldy vgm_source+1
+    lda vgm_loop
+    asl a ; -> C
+    lda vgm_buffers
+    jsr vgm_init
+    jmp vgm_update
+.no_looping 
+    ; no looping so set flag & stop PSG
     sty vgm_finished    ; any NZ value is fine, in this case 0x08
     jmp sn_reset ; also returns non-zero in A
 }
@@ -158,6 +175,8 @@ VGM_STREAMS = 8
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 .vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
 .vgm_temp equb 0        ; used by vgm_update_register1()
+.vgm_loop equb 0        ; non zero if tune is to be looped
+.vgm_source equw 0      ; vgm data address
 
 ; 8 counters for VGM register update counters (RLE)
 .vgm_register_counts
@@ -397,10 +416,12 @@ ENDIF ;ENABLE_HUFFMAN
     lda vgm_streams + VGM_STREAMS*7, x
     sta lz_window_dst   ; **SELF MODIFY** not ZP
 
+IF ENABLE_HUFFMAN
     lda vgm_streams + VGM_STREAMS*8, x
     sta zp_huff_bitbuffer
     lda vgm_streams + VGM_STREAMS*9, x
     sta zp_huff_bitsleft
+ENDIF
 
     ; then fetch a decompressed byte
     jsr lz_decode_byte
@@ -431,10 +452,12 @@ ENDIF ;ENABLE_HUFFMAN
     lda lz_window_dst
     sta vgm_streams + VGM_STREAMS*7, x
 
+IF ENABLE_HUFFMAN
     lda zp_huff_bitbuffer
     sta vgm_streams + VGM_STREAMS*8, x
     lda zp_huff_bitsleft
     sta vgm_streams + VGM_STREAMS*9, x
+ENDIF
 
 .loadA
     lda #0 ;[2](2) - ***SELF MODIFIED - See above ***
