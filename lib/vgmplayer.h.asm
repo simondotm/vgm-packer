@@ -22,7 +22,7 @@ ENABLE_VGM_FX = TRUE
 ; VGM player uses:
 ;  8 zero page vars without huffman
 ; 19 zero page vars with huffman
-VGM_ZP = &70
+.VGM_ZP SKIP 8 ; must be in zero page 
 
 ; declare zero page registers used for each compressed stream (they are context switched)
 lz_zp = VGM_ZP + 0
@@ -33,13 +33,15 @@ zp_match_cnt    = lz_zp + 4    ; match count LO/HI, 10 references
 ; temporary vars
 zp_temp = lz_zp + 6 ; 2 bytes ; used only by lz_decode_byte and lz_fetch_count, does not need to be zp apart from memory/speed reasons
 
+
+
 ; The following vars only apply if Huffman support is enabled
 IF ENABLE_HUFFMAN
 
 ; we re-use the LZ read ptr, since the huffman routine replaces the lz_fetch_byte
 huff_readptr    = zp_stream_src 
 
-HUFF_ZP = zp_temp + 2
+.HUFF_ZP SKIP 11 ;= zp_temp + 2
 
 ; huffman decoder stream context - CHECK:needs to be in ZP? prefix with zp if so
 zp_huff_bitbuffer  = HUFF_ZP + 0    ; huffman decoder bit buffer - 1 byte, referenced by inner loop
@@ -62,3 +64,12 @@ ENDIF ; ENABLE_HUFFMAN
 ; they may need to be zero page due to indirect addressing
 zp_block_data = zp_stream_src ; re-uses zp_stream_src, must be zp ; zp_buffer+0 ; must be zp
 zp_block_size = zp_temp+0 ; does not need to be zp
+
+
+
+
+VGM_MUSIC_BPM = 125
+VGM_BEATS_PER_PATTERN = 8
+
+VGM_FRAMES_PER_BEAT = 50 * (60.0 / VGM_MUSIC_BPM)
+VGM_FRAMES_PER_PATTERN = VGM_FRAMES_PER_BEAT * VGM_BEATS_PER_PATTERN

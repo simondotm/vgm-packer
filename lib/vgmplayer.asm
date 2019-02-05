@@ -25,6 +25,18 @@ IF ENABLE_VGM_FX
 ; tone0 LO, tone1 LO, tone2 LO, tone3, vol0, vol1, vol2, vol3 (all 4-bit values)
 ; next 3 bytes are:
 ; tone0 HI, tone1 HI, tone2 HI (all 6-bit values)
+VGM_FX_TONE0_LO = 0
+VGM_FX_TONE1_LO = 1
+VGM_FX_TONE2_LO = 2
+VGM_FX_TONE3_LO = 3 ; noise
+VGM_FX_VOL0     = 4
+VGM_FX_VOL1     = 5
+VGM_FX_VOL2     = 6
+VGM_FX_VOL3     = 7 ; noise
+VGM_FX_TONE0_HI = 8
+VGM_FX_TONE1_HI = 9
+VGM_FX_TONE2_HI = 10
+
 ENDIF
 
 ;-------------------------------------------
@@ -484,9 +496,6 @@ ENDIF
     tay
     and #&0f
     ldx vgm_temp
-IF ENABLE_VGM_FX
-    sta vgm_fx,x ; store the register (0-7) setting in fx array
-ENDIF
     ora vgm_register_headers,x
     ; check if it's a tone3 skip command (&ef) before we play it
     ; - this prevents the LFSR being reset unnecessarily
@@ -504,6 +513,18 @@ ENDIF
     adc #1
     ldx vgm_temp
     sta vgm_register_counts,x
+
+IF ENABLE_VGM_FX
+    tya
+    and #&0f
+    ora vgm_register_headers,X
+    cmp #&ef ; tone3 skip?
+    beq skip_tone3_fx
+    and #&0f
+    sta vgm_fx,x ; store the register (0-7) setting in fx array
+.skip_tone3_fx
+ENDIF
+
     sec
 }
 .skip_register_update
