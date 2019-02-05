@@ -144,7 +144,7 @@ VGM_STREAMS = 8
 .vgm_buffers  equb 0    ; the HI byte of the address where the buffers are stored
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 .vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
-.vgm_temp equb 0
+.vgm_temp equb 0        ; used by vgm_update_register1()
 
 
 
@@ -753,32 +753,25 @@ IF USE_HUFFMAN
 ; http://cbloomrants.blogspot.com/2010/08/08-11-10-huffman-arithmetic-equivalence.html
 ; 7 bits peek would require 2x 128 byte tables (256 bytes total extra to data stream).
 
-; other optimization ideas:
-; bitbuffer is filled at most twice per byte fetch.
-
 ; this routine must be located within branch reach of lz_fetch_byte()
 .huff_fetch_byte
 {
+    ; code = codesize = firstcode = startindex = 0
     lda #0
-    sta huff_code + 0       ;code = 0                            # word
+    sta huff_code + 0
     sta huff_code + 1
-    sta huff_codesize ;code_size = 0                       # byte
-
-    sta huff_firstcode + 0 ; firstCodeWithNumBits = 0            # word
+    sta huff_codesize
+    sta huff_firstcode + 0
     sta huff_firstcode + 1
+    sta huff_startindex
 
-    sta huff_startindex ; startIndexForCurrentNumBits = 0     # byte
-
-    ;sourceindex = 0
-    ;unpacked = 0
-    ;while unpacked < unpacked_size: # currentbyte < len(data):
-    ; skip over nextbit - this layout saves a jmp per bitlength
+    ; skip over nextbit on first entry - this layout saves a jmp per bitlength
     jmp decode_loop
 }
 .nextbit
 {
     ; otherwise, move to the next bit length
-    ; firstCodeWithNumBits += numCodes
+    ; firstcode += numcodes
     lda huff_firstcode + 0
     clc
     adc huff_numcodes
@@ -787,36 +780,25 @@ IF USE_HUFFMAN
     adc #0
     sta huff_firstcode + 1
 
-    ; firstCodeWithNumBits <<= 1
+    ; firstcode <<= 1
     asl huff_firstcode + 0
     rol huff_firstcode + 1
     
-    ; startIndexForCurrentNumBits += numCodes
+    ; startindex += numcodes
     lda huff_startindex
     clc
     adc huff_numcodes
     sta huff_startindex
     
     ; keep going until we find a symbol
-    ;REMOVED: jmp decode_loop
     ; falls into decode_loop
 }
 .decode_loop
 {
-    ;# keep the bitbuffer going
-    ;if numbitsbuffered == 0:
-    ;    # we're out of data, so any wip codes are invalid due to byte padding.
-    ;    #if currentbyte >= len(data):
-    ;    #    break
-    ;
-    ;   bitbuffer = data[currentbyte]
-    ;   currentbyte += 1
-    ;   numbitsbuffered += 8
-
-
+    ; check if we need to refill bitbuffer
     lda zp_huff_bitsleft
     bne got_bits
-    ; fetch more bits
+    ; fetch 8 more bits
     ldy #0
     lda (huff_readptr), y
     sta zp_huff_bitbuffer
@@ -827,25 +809,21 @@ IF USE_HUFFMAN
     inc huff_readptr + 1
 .got_bits
 
-    ;# get a bit
-    ;bit = (bitbuffer & 128) >> 7
-    ;bitbuffer <<= 1
-    ;numbitsbuffered -= 1
-
-    ;# build code
-    ;code = (code << 1) | bit
-    ;code_size += 1
-
     ; build code
+
+    ; bitsleft -=1
     dec zp_huff_bitsleft
+    ; bit = (bitbuffer & 128) >> 7
+    ; buffbuffer <<= 1
     asl zp_huff_bitbuffer           ; bit7 -> C
+    ; code = (code << 1) | bit
     rol huff_code + 0       ; C -> bit0, bit7 -> C
     rol huff_code + 1       ; C -> bit8, bit15 -> C
+    ; codesize += 1
     inc huff_codesize
 
-    ;# how many canonical codes have this many bits
-    ;assert code_size <= Huffman.MAX_CODE_BIT_LENGTH
-    ;numCodes = length_table[code_size] # self.table_bitlengths[code_size] # byte
+    ; how many canonical codes have this many bits?
+    ; numCodes = length_table[codesize]
     ldy huff_codesize
 }
 .LOAD_LENGTH_TABLE
@@ -853,9 +831,8 @@ IF USE_HUFFMAN
     lda &FFFF, Y     ; ** MODIFIED ** See vgm_stream_mount
     sta huff_numcodes
 
-    ;# if input code so far is within the range of the first code with the current number of bits, it's a match
-    ;indexForCurrentNumBits = code - firstCodeWithNumBits
-
+    ; if input code so far is within the range of the first code with the current number of bits, it's a match
+    ; index = code - firstcode
     sec
     lda huff_code + 0
     sbc huff_firstcode + 0
@@ -864,16 +841,17 @@ IF USE_HUFFMAN
     sbc huff_firstcode + 1
     sta huff_index + 1
 
-    ;if indexForCurrentNumBits < numCodes:
-    
+    ; if index < numcodes:
     ; if hi byte is non zero, is definitely > numcodes
     ; or numcodes >= index
     bne nextbit 
+
+    ; we found our code, determine which symbol index it has.
     lda huff_index
     cmp huff_numcodes
     bcs nextbit
     
-    ; code = startIndexForCurrentNumBits + indexForCurrentNumBits
+    ; code = startindex + index
     lda huff_startindex
     clc
     adc huff_index
@@ -881,7 +859,7 @@ IF USE_HUFFMAN
 }
 .LOAD_SYMBOL_TABLE
 {
-    ; symbol = symbol_table[code]
+    ; return symbol_table[code]
     lda &FFFF, Y     ; ** MODIFIED ** See vgm_stream_mount
     rts
 }
