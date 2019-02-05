@@ -4,11 +4,6 @@
 ; https://github.com/simondotm/vgm-packer
 ;******************************************************************
 
-
-LZ4_FORMAT = FALSE ; legacy define. May get reactivated if we ever do the full lz4 support
-VGM_STREAM_CONTEXT_SIZE = 10 ; number of bytes total workspace for a stream
-VGM_STREAMS = 8
-
 ;---------------------------------------------------------------
 ; VGM Player Library code
 ;---------------------------------------------------------------
@@ -124,9 +119,20 @@ VGM_STREAMS = 8
 ; Not user callable.
 ;-------------------------------------------
 
+; LZ4_FORMAT is a legacy define. May get reactivated if we ever do the full lz4 support
+LZ4_FORMAT = FALSE
+
+; HUFFMAN_INLINE is an experimental optimization that inlines huffman/lz fetch_byte routines.
+; Not sure its worth it for the huffman code path since it's inherently slower
+;  and not likely to be much of a benefit.
+HUFFMAN_INLINE = FALSE 
+
 ;-------------------------------------------
 ; local vgm workspace
 ;-------------------------------------------
+
+VGM_STREAM_CONTEXT_SIZE = 10 ; number of bytes total workspace for a stream
+VGM_STREAMS = 8
 
 ;ALIGN 16 ; doesnt have to be aligned, just for debugging ease
 .vgm_streams ; decoder contexts - 8 bytes per stream, 8 streams (64 bytes)
@@ -139,19 +145,14 @@ VGM_STREAMS = 8
     ; 8 zp_huff_bitbuffer ; 1 byte, referenced by inner loop
     ; 9 huff_bitsleft     ; 1 byte, referenced by inner loop
 
-
-
 .vgm_buffers  equb 0    ; the HI byte of the address where the buffers are stored
 .vgm_finished equb 0    ; a flag to indicate player has reached the end of the vgm stream
 .vgm_flags  equb 0      ; flags for current vgm file. bit7 set stream is huffman coded. bit 6 set if stream is 16-bit LZ4 offsets
 .vgm_temp equb 0        ; used by vgm_update_register1()
 
-
-
 ; 8 counters for VGM register update counters (RLE)
 .vgm_register_counts
     SKIP 8
-
 
 ; Table of SN76489 flags for the 8 LATCH/DATA registers
 ; %1cctdddd 
@@ -236,6 +237,7 @@ IF USE_HUFFMAN
     ; stash table sizes for later
 IF FALSE
     ; we dont need the symbol table size for anything.
+    ; left here for future possibility of GD3 tags
     ldy #8
     lda (zp_block_data),Y   ; symbol table size
     sta zp_symbol_table_size    
@@ -312,7 +314,8 @@ ENDIF ; USE_HUFFMAN
     cpx #8
     bne block_loop
 
-IF USE_HUFFMAN == TRUE
+IF USE_HUFFMAN
+IF HUFFMAN_INLINE
     ; setup byte fetch routines to lz_fetch_byte or huff_fetch_byte
     ; depending if data file is huffman encoded or not
     ; default compilation is lz_fetch_byte, so this code is not needed if HUFFMAN disabled
@@ -338,6 +341,7 @@ IF LZ4_FORMAT
 ENDIF
     stx fetchByte5+1
     sty fetchByte5+2
+ENDIF ; HUFFMAN_INLINE
 ENDIF ;USE_HUFFMAN    
 
     rts
@@ -724,12 +728,14 @@ ENDIF
 ; returns byte in A, clobbers Y
 .lz_fetch_byte
 {
-;IF USE_HUFFMAN == TRUE
-;    ; if bit7 of vgm_flags is set, its a huffman stream
-;    bit vgm_flags        ; [3 zp, 4 abs] (2)
-;    bmi huff_fetch_byte  ; [2, +1, +2] (2) see below
-;    ; 
-;ENDIF
+IF USE_HUFFMAN == TRUE
+IF HUFFMAN_INLINE == FALSE
+    ; if bit7 of vgm_flags is set, its a huffman stream
+    bit vgm_flags        ; [3 zp, 4 abs] (2)
+    bmi huff_fetch_byte  ; [2, +1, +2] (2) see below
+ENDIF ; HUFFMAN_INLINE
+ENDIF ; USE_HUFFMAN
+
     ; otherwise plain LZ4 byte fetch
     ldy #0
     lda (zp_stream_src),y
