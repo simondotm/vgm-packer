@@ -82,8 +82,8 @@ zp_block_data = zp_stream_src ; re-uses zp_stream_src, must be zp ; zp_buffer+0 
 
 
 zp_block_size = zp_temp+0 ; does not need to be zp
-zp_symbol_table_size = zp_stash + 0 ; OPTIMIZATION - can be removed
-zp_length_table_size = zp_stash + 1 ; OPTIMIZATION - only used once, can be absolute memory temp
+;zp_symbol_table_size = zp_stash + 0 ; OPTIMIZATION - can be removed
+;zp_length_table_size = zp_stash + 1 ; OPTIMIZATION - only used once, can be absolute memory temp
 
 ; OPTIMIZATIONS
 ; Cheaper to store JSR huffman_fetch directly once per init, than check every byte?

@@ -567,13 +567,21 @@ IF USE_HUFFMAN
     bpl skip_hufftable
 
     ; stash table sizes for later
+IF FALSE
+    ; we dont need the symbol table size for anything.
     ldy #8
     lda (zp_block_data),Y   ; symbol table size
     sta zp_symbol_table_size    
     iny
+ELSE
+    ldy #9
+ENDIF
     lda (zp_block_data),Y   ; bitlength table size
-    sta zp_length_table_size    
-    inc zp_length_table_size    ; compensate for the first byte (range is 0-nbits inclusive), will never wrap a byte
+    ;sta zp_length_table_size    
+    ;inc zp_length_table_size    
+    ; compensate for the first byte (range is 0-nbits inclusive), value always < 254
+    sta stashLengthTableSize+1 ; **SELF MODIFYING**
+    inc stashLengthTableSize+1 ; **SELF-MODIFYING**
 
     ; store the address of the bitlengths table directly in the huff_fetch_byte routine
     lda zp_block_data + 0
@@ -587,7 +595,9 @@ IF USE_HUFFMAN
     ; store the address of the symbols table directly in the huff_fetch_byte routine
     lda LOAD_LENGTH_TABLE + 1
     clc
-    adc zp_length_table_size
+.stashLengthTableSize
+    ;adc zp_length_table_size
+    adc #0 ; length table size **SELF MODIFIED - see above **
     sta LOAD_SYMBOL_TABLE + 1   ; ** SELF MODIFICATION ***
     lda LOAD_LENGTH_TABLE + 2
     adc #0
