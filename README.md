@@ -43,6 +43,7 @@ Notes:
 * The script includes other Python modules from the `modules` folder. For this reason it is not particularly portable as a standalone script so I recommend cloning the repo locally and creating your own subfolder for any vgm's you want to convert. 
 * If you need to deploy it as part of a build process in a separate project you can copy `vgmpacker.py` but just make sure you also copy the `modules` folder too. _(I'm looking into ways to make it more self contained as a single script/pyc file)_
 * The `modules` folder contains copies of my Python compression scripts from https://github.com/simondotm/lz4enc-python which is where I'm maintaining the release versions. 
+* The 6502 decoder currently only supports buffer sizes of 255 bytes, so while you can use the `--buffer` option for experimentation it won't yield `.vgc` files that can be used on the 6502 at the moment. If you attempt this, know that: 1) buffer size > 255 will crash the decoder, and 2) buffer size < 255 will work ok, but you'll just get worse compression for no benefit on the decoder side. _I might look into supporting buffer sizes of 128 or 64 later since it may possible allow reduction of the 2kb workspace to 1kb or 0.5KB._
 
 
 ### 6502 Player Usage
