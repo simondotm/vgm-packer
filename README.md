@@ -1,6 +1,12 @@
 # vgm-packer
 Python based compression tool for packing SN76489 based VGM music data into an optimal format for use on 8-bit CPU's.
 
+Written by [Simon Morris](https://github.com/simondotm).
+
+Release under MIT License, Copyright (c) 2019 Simon Morris. All rights reserved.
+
+## Introduction
+
 Full writeup coming soon, but basic tool chain is:
 
 `vgmpacker.py <vgmfile>` to create a `.vgc` file which can be loaded and processed by the code in `vgmdemo.asm` and `lib\vgmplayer.h.asm`. The tool only works with VGM files for the SN76489 PSG.
@@ -31,6 +37,14 @@ Notes:
  Enabling huffman will result in slightly better compression, but slower and more variable decoding speed
 
 ```
+
+Notes:
+* The script is only compatible with Python 2.x at the moment. 
+* The script includes other Python modules from the `modules` folder. For this reason it is not particularly portable as a standalone script so I recommend cloning the repo locally and creating your own subfolder for any vgm's you want to convert. 
+* If you need to deploy it as part of a build process in a separate project you can copy `vgmpacker.py` but just make sure you also copy the `modules` folder too. _(I'm looking into ways to make it more self contained as a single script/pyc file)_
+* The `modules` folder contains copies of my Python compression scripts from https://github.com/simondotm/lz4enc-python which is where I'm maintaining the release versions. 
+
+
 ### 6502 Player Usage
 Import `lib\vgmplayer.h.asm` and `lib\vgmplayer.asm` into your BeebAsm project. Note that you should `INCLUDE "lib/vgmplayer.h.asm"` at the point where you declare your zeropage vars - see `vgmdemo.asm` for an example.
 
@@ -51,6 +65,9 @@ There are 2 main user routines:
 `vgm_update()` - to refresh the player every 50Hz
 
 See `vgmplayer.asm` for more information.
+
+#### `vgmdemo.asm`
+This is a BeebAsm project with some example 6502 code for the `vgmplayer.asm` library. Feel free to create a `.vgc` file from your favourite `.vgm`, and then just `INCBIN` it accordingly.
 
 #### Memory Requirements
 The standard decoder requires 8 zero page vars and ~740 bytes of code ram.
