@@ -22,13 +22,13 @@ optional arguments:
   -o <output>, --output <output>
                         write VGC file <output> (default is '[input].vgc')
   -b <n>, --buffer <n>  Set decoder buffer size to <n> bytes, default: 255
-  -n, --nohuffman       Disable huffman compression
+  -n, --huffman         Enable huffman compression
   -v, --verbose         Enable verbose mode
 
 Notes:
  Buffer size <256 bytes emits 8-bit LZ4 offsets, medium compression, faster decoding, 2Kb workspace
  Buffer size >255 bytes emits 16-bit LZ4 offsets, higher compression, slower decoding, Size*8 workspace
- Disabling huffman will result in slightly worse compression, but faster and less variable decoding speed
+ Enabling huffman will result in slightly better compression, but slower and more variable decoding speed
 
 ```
 ### 6502 Player Usage
@@ -39,10 +39,10 @@ Import `lib\vgmplayer.h.asm` and `lib\vgmplayer.asm` into your BeebAsm project. 
 You can assemble this module a couple of ways and there are defines in `vgmplayer.h.asm` as follows:
 
 `ENABLE_HUFFMAN`
-* If set to TRUE, the decoder will be able to load `.vgc` files compiled by `vgmpacker.py` with Huffman enabled (this is the default setting)
-* If set to FALSE, the decoder will not include any code to decode huffman `.vgc` files so make sure you compress your `.vgm` files using the `-n` option with `vgmpacker.py`.
+* If set to TRUE, the decoder will be able to load standard `.vgc` files as well as ones that have been huffman compressed by `vgmpacker.py`
+* If set to FALSE, the decoder will not include any code to decode huffman `.vgc` files so make sure you do not compress your `.vgm` files using the `-n` option with `vgmpacker.py`.
 
-Huffman decoding is a fair bit slower, but does save 5-10% in compression ratio, so I recommend only using it for situations where you need maximum compression and CPU runtime & code size is not an constraint.
+Huffman decoding is a fair bit slower, but does save 5-10% in compression ratio, so I recommend only using it for situations where you need maximum compression and CPU runtime & code size is not an constraint. 
 
 There are 2 main user routines:
 
@@ -53,9 +53,10 @@ There are 2 main user routines:
 See `vgmplayer.asm` for more information.
 
 #### Memory Requirements
-The Huffman enabled decoder requires 19 zero page vars.
+The standard decoder requires 8 zero page vars and ~740 bytes of code ram.
 
-The non-Huffman enabled decoder requires 8 zero page vars.
+The Huffman enabled decoder requires 19 zero page vars and ~924 bytes of code ram.
+
 
 Both decoders require a 2Kb page aligned workspace ram buffer which can be passed to the decoder via `vgm_init()`.
 

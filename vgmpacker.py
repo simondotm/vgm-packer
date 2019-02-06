@@ -614,7 +614,7 @@ if __name__ == '__main__':
 	epilog_string = "Notes:\n"
 	epilog_string += " Buffer size <256 bytes emits 8-bit LZ4 offsets, medium compression, faster decoding, 2Kb workspace\n"
 	epilog_string += " Buffer size >255 bytes emits 16-bit LZ4 offsets, higher compression, slower decoding, Size*8 workspace\n"
-	epilog_string += " Disabling huffman will result in slightly worse compression, but faster and less variable decoding speed\n"
+	epilog_string += " Enabling huffman will result in slightly better compression, but slower and more variable decoding speed\n"
 
 	parser = argparse.ArgumentParser(
 		formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -623,7 +623,7 @@ if __name__ == '__main__':
 	parser.add_argument("input", help="VGM source file (must be single SN76489 PSG format) [input]")
 	parser.add_argument("-o", "--output", metavar="<output>", help="write VGC file <output> (default is '[input].vgc')")
 	parser.add_argument("-b", "--buffer", type=int, default=255, metavar="<n>", help="Set decoder buffer size to <n> bytes, default: 255")
-	parser.add_argument("-n", "--nohuffman", help="Disable huffman compression", default=False, action="store_true")
+	parser.add_argument("-n", "--huffman", help="Enable huffman compression", default=False, action="store_true")
 	parser.add_argument("-v", "--verbose", help="Enable verbose mode", action="store_true")
 	args = parser.parse_args()
 
@@ -640,7 +640,7 @@ if __name__ == '__main__':
 
 	packer = VgmPacker()
 	packer.VERBOSE = args.verbose
-	packer.process(src, dst, args.buffer, not args.nohuffman)
+	packer.process(src, dst, args.buffer, args.huffman)
 
 
 
