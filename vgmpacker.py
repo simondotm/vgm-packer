@@ -130,7 +130,7 @@ class VgmPacker:
 					else:
 						if verbose:
 							print(" tone data on latched channel " + str(latched_channel))
-						registers[latched_channel*2+1] = d & 63 # tone data only contains 6 bits of info anyway, so no need for mask
+						registers[latched_channel*2+1] = d # we no longer do any masking here # d & 63 # tone data only contains 6 bits of info anyway, so no need for mask
 						if latched_channel == 3:
 							print("ERROR CHANNEL")
 
