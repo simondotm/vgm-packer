@@ -101,7 +101,7 @@ Because the data is now laid out in a homogenous way - always 11 bytes per frame
 
 **Step 3 - Run Length Encode**
 
-Next, we perform a simple 4-bit run-length encoding scheme over each of the first 4 16-bit data streams and the last 4 8-bit data streams. This typically reduces the dataset by a significant amount depending on the music.
+Next, we perform a simple 4-bit run-length encoding scheme over each of the first three 16-bit data streams and the last five 8-bit data streams. This typically reduces the dataset by a significant amount depending on the music.
 
 Whilst doing this, we also run a delta scheme on the noise tone data to ensure the decoder does not write to the noise tone register unless it needs to be updated. This is important because unlike the other registers which can be repeatedly set to the same value without any effect, writing to the noise tone register resets the state of the sound chip's LFSR which will introduce audible artifacts if not handled appropriately.
 
