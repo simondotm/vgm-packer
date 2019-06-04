@@ -139,7 +139,7 @@ LZ4 doesn't do any bit-level encoding, as it is byte-oriented for speed. This me
 
 **Step 6 - Decoding**
 
-Finally, decoding the data from `.VGC` files requires the 8 streams to be individually addressed and decoded as 8 seperate (modified) LZ4 streams. For each 50Hz or 60Hz frame, the decoder pulls the bytes it needs for each sound chip register from the eight LZ4 streams (taking care to observe the run-length encoding) and sends them to the soundchip as 16-bit tone commands, 8-bit noise commands, or 8-bit volume commands.
+Finally, decoding the data from `.VGC` files requires the 8 streams to be individually addressed and decoded as 8 seperate (modified) LZ4 streams. For each 50Hz or 60Hz frame, the decoder pulls the bytes it needs for each sound chip register from the eight LZ4 streams (taking care to observe the run-length encoding) and sends them to the soundchip (with the correct register flags added back at runtime) as 16-bit tone commands , 8-bit noise commands, or 8-bit volume commands.
 
 Since there are 8 LZ4 streams, the decoder needs 256 bytes of RAM for each stream - a total of 2048 bytes workspace. 
 
@@ -197,6 +197,8 @@ For each of the 8 streams:
 This repo also contains a utility script called `vgmdump.py` which will take a `.VGM` file containing `SN76489` music and export a `.RAW` file which is essentially the 'raw` SN76489 register data stored as 11 bytes x N frames (where 1 frame is a 50Hz or 60Hz update as defined as the playback rate in the source VGM file).
 
 This is useful for testing purposes or if you ever need to stream raw VGM data to a chip.
+
+`vgmdump` does not strip the register flags, so the data it outputs can be streamed directly to an SN76489.
 
 ### Example Usage
 
