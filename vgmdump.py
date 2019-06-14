@@ -150,7 +150,7 @@ class VgmDump:
 	# Process(filename)
 	# Convert the given VGM file to a dump file
 	#----------------------------------------------------------
-	def process(self, src_filename, dst_filename):
+	def process(self, src_filename, dst_filename, add_header = False):
 
 		# load the VGM file, or alternatively interpret as a binary
 		if src_filename.lower()[-4:] == ".vgm":
@@ -188,8 +188,12 @@ class VgmDump:
 
 		print("")
 
+		# stash the header
+		header = data_block[:data_offset]
+
 		# Trim off the header data. The rest is raw data.
 		data_block = data_block[data_offset:]
+
 
 		#----------------------------------------------------------
 		# Begin VGM dump
@@ -203,7 +207,12 @@ class VgmDump:
 		dump = self.combine_registers(registers, [0,1,2,3,4,5,6,7,8,9,10])
 
 		# write a raw data version of the file 
-		open(dst_filename, "wb").write( dump )
+		fh = open(dst_filename, "wb")
+		if add_header:
+			print("Writing Header...")
+			fh.write(header)
+
+		fh.write( dump )
 
 
 #------------------------------------------------------------------------
@@ -229,6 +238,7 @@ if __name__ == '__main__':
 
 	parser.add_argument("input", help="VGM source file (must be single SN76489 PSG format) [input]")
 	parser.add_argument("-o", "--output", metavar="<output>", help="write VGC file <output> (default is '[input].raw')")
+	parser.add_argument("-m", "--meta", help="Output metadata header", action="store_true")
 	parser.add_argument("-v", "--verbose", help="Enable verbose mode", action="store_true")
 	args = parser.parse_args()
 
@@ -245,7 +255,7 @@ if __name__ == '__main__':
 
 	dumper = VgmDump()
 	dumper.VERBOSE = args.verbose
-	dumper.process(src, dst)
+	dumper.process(src, dst, args.meta)
 
 
 

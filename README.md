@@ -200,11 +200,32 @@ This is useful for testing purposes or if you ever need to stream raw VGM data t
 
 `vgmdump` does not strip the register flags, so the data it outputs can be streamed directly to an SN76489.
 
+### Command Line
+```
+VgmDump.py : VGM file dump utility
+Written in 2019 by Simon Morris, https://github.com/simondotm/vgm-packer
+
+usage: vgmdump.py [-h] [-o <output>] [-m] [-v] input
+
+positional arguments:
+  input                 VGM source file (must be single SN76489 PSG format)
+                        [input]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -o <output>, --output <output>
+                        write VGC file <output> (default is '[input].raw')
+  -m, --meta            Output metadata header
+  -v, --verbose         Enable verbose mode
+  ```
+
 ### Example Usage
 
 ```
 vgmdump.py music.vgm -o music.raw
 ```
+
+`vgmdump.py` will add a small meta data header to the raw file if `-m` option is selected.
 
 ---
 
