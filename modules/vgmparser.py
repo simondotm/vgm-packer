@@ -30,6 +30,8 @@ import struct
 import sys
 import binascii
 import math
+import random
+
 from os.path import basename
 
 if (sys.version_info > (3, 0)):
@@ -305,7 +307,7 @@ class VgmStream:
 	def __init__(self, vgm_filename):
 
 		self.vgm_filename = vgm_filename
-		print "  VGM file loaded : '" + vgm_filename + "'"
+		print("  VGM file loaded : '" + vgm_filename + "'")
 		
 		# open the vgm file and parse it
 		vgm_file = open(vgm_filename, 'rb')
@@ -332,12 +334,12 @@ class VgmStream:
 		self.vgm_loop_offset = self.metadata['loop_offset']
 		self.vgm_loop_length = self.metadata['loop_samples']
 		
-		print "      VGM Version : " + "%x" % int(self.metadata['version'])
-		print "VGM SN76489 clock : " + str(float(self.metadata['sn76489_clock'])/1000000) + " MHz"
-		print "         VGM Rate : " + str(float(self.metadata['rate'])) + " Hz"
-		print "      VGM Samples : " + str(int(self.metadata['total_samples'])) + " (" + str(int(self.metadata['total_samples'])/self.VGM_FREQUENCY) + " seconds)"
-		print "  VGM Loop Offset : " + str(self.vgm_loop_offset)
-		print "  VGM Loop Length : " + str(self.vgm_loop_length)
+		print("      VGM Version : " + "%x" % int(self.metadata['version']) )
+		print("VGM SN76489 clock : " + str(float(self.metadata['sn76489_clock'])/1000000) + " MHz" )
+		print("         VGM Rate : " + str(float(self.metadata['rate'])) + " Hz" )
+		print("      VGM Samples : " + str(int(self.metadata['total_samples'])) + " (" + str(int(self.metadata['total_samples'])/self.VGM_FREQUENCY) + " seconds)" )
+		print("  VGM Loop Offset : " + str(self.vgm_loop_offset) )
+		print("  VGM Loop Length : " + str(self.vgm_loop_length) )
 
 
 
@@ -355,7 +357,7 @@ class VgmStream:
 		else:
 			self.dual_chip_mode_enabled = False
 			
-		print "    VGM Dual Chip : " + str(self.dual_chip_mode_enabled)
+		print("    VGM Dual Chip : " + str(self.dual_chip_mode_enabled) )
 		
 
 		# override/disable dual chip commands in the output stream if required
@@ -363,7 +365,7 @@ class VgmStream:
 			# remove the clock flag that enables dual chip mode
 			self.metadata['sn76489_clock'] = self.metadata['sn76489_clock'] & 0xbfffffff
 			self.dual_chip_mode_enabled = False
-			print "Dual Chip Mode Disabled - DC Commands will be removed"
+			print( "Dual Chip Mode Disabled - DC Commands will be removed" )
 
 		# take a copy of the clock speed for the VGM processor functions
 		self.vgm_source_clock = self.metadata['sn76489_clock']
@@ -373,8 +375,8 @@ class VgmStream:
 		self.parse_gd3()
 		self.parse_commands()
 		
-		print "   VGM Commands # : " + str(len(self.command_list))
-		print ""
+		print( "   VGM Commands # : " + str(len(self.command_list)) )
+		print( "" )
 
 
 	def validate_vgm_data(self):
@@ -394,10 +396,10 @@ class VgmStream:
 
 			try:
 				if self.data.read(4) != self.vgm_magic_number:
-					print "Error: Data does not appear to be a valid VGM file"
+					print( "Error: Data does not appear to be a valid VGM file" )
 					raise ValueError('Data does not appear to be a valid VGM file')
 			except IOError:
-				print "Error: Data does not appear to be a valid VGM file"
+				print( "Error: Data does not appear to be a valid VGM file" )
 				# IOError will be raised if the file is not a valid gzip file
 				raise ValueError('Data does not appear to be a valid VGM file')
 
@@ -433,7 +435,7 @@ class VgmStream:
 
 	def validate_vgm_version(self):
 		if self.metadata['version'] not in self.supported_ver_list:
-			print "VGM version is not supported"
+			print( "VGM version is not supported" )
 			raise FatalError('VGM version is not supported')
 
 	def parse_gd3(self):
@@ -500,7 +502,7 @@ class VgmStream:
 				'notes': gd3_notes
 			}		
 		else:
-			print "WARNING: Malformed/missing GD3 tag"
+			print( "WARNING: Malformed/missing GD3 tag" )
 			self.gd3_data = {
 				'title_eng': gd3_title_eng,
 				'title_jap': '',
@@ -618,7 +620,7 @@ class VgmStream:
 	
 	# returns bytearray containing the raw data version of the vgm
 	def as_binary(self, rawheader = True):
-		print "   VGM Processing : Output binary file "
+		print( "   VGM Processing : Output binary file " )
 
 		byte_size = 1
 		packet_size = 0
@@ -636,9 +638,12 @@ class VgmStream:
 			if command != struct.pack('B', 0x50):
 			
 				# non-write command, so flush any pending packet data
-				if self.VERBOSE: print "Packet length " + str(len(packet_block))
+				if self.VERBOSE: print( "Packet length " + str(len(packet_block)) )
 
-				data_block.append(struct.pack('B', len(packet_block)))
+				# python 3 struct.pack returns iterable "bytes" even if len is 1, so we use extend rather than append since this is compatible with python 2 and 3
+				#data_block.append( struct.pack('B', len(packet_block) ) )
+				data_block.extend( struct.pack('B', len(packet_block) ) )
+				
 				data_block.extend(packet_block)
 				packet_count += 1
 				
@@ -648,7 +653,7 @@ class VgmStream:
 				# start new packet
 				packet_block = bytearray()
 				
-				if self.VERBOSE: print "Command " + str(binascii.hexlify(command))
+				if self.VERBOSE: print( "Command " + str(binascii.hexlify(command)) )
 				
 				
 
@@ -667,23 +672,23 @@ class VgmStream:
 				if wait != 0:	
 					intervals = wait / (self.VGM_FREQUENCY / play_rate)
 					if intervals == 0:
-						print "ERROR in data stream, wait value (" + str(wait) + ") was not divisible by play_rate (" + str((self.VGM_FREQUENCY / play_rate)) + "), bailing"
+						print( "ERROR in data stream, wait value (" + str(wait) + ") was not divisible by play_rate (" + str((self.VGM_FREQUENCY / play_rate)) + "), bailing" )
 						return
 					else:
-						if self.VERBOSE: print "WAIT " + str(intervals) + " intervals"
+						if self.VERBOSE: print( "WAIT " + str(intervals) + " intervals" )
 						
 					# emit empty packet headers to simulate wait commands
 					intervals -= 1
 					while intervals > 0:
 						data_block.append(0)
-						if self.VERBOSE: print "Packet length 0"
+						if self.VERBOSE: print( "Packet length 0" )
 						intervals -= 1
 						packet_count += 1
 
 				
 				
 			else:
-				if self.VERBOSE: print "Data " + str(binascii.hexlify(command))			
+				if self.VERBOSE: print( "Data " + str(binascii.hexlify(command)) )
 				packet_block.extend(q['data'])
 
 		# eof
@@ -693,24 +698,25 @@ class VgmStream:
 
 		header_block = bytearray()
 		# emit the play rate
-		print "play rate is " + str(play_rate)
-		header_block.append(struct.pack('B', play_rate & 0xff))
-		header_block.append(struct.pack('B', packet_count & 0xff))		
-		header_block.append(struct.pack('B', (packet_count >> 8) & 0xff))	
+		print( "play rate is " + str(play_rate) )
+		# python 3 struct.pack returns iterable "bytes" even if len is 1, so we use extend rather than append since this is compatible with python 2 and 3
+		header_block.extend(struct.pack('B', play_rate & 0xff))
+		header_block.extend(struct.pack('B', packet_count & 0xff))		
+		header_block.extend(struct.pack('B', (packet_count >> 8) & 0xff))	
 
-		print "    Num packets " + str(packet_count)
+		print( "    Num packets " + str(packet_count) )
 		duration = packet_count / play_rate
 		duration_mm = int(duration / 60.0)
 		duration_ss = int(duration % 60.0)
-		print "    Song duration " + str(duration) + " seconds, " + str(duration_mm) + "m" + str(duration_ss) + "s"
-		header_block.append(struct.pack('B', duration_mm))	# minutes		
-		header_block.append(struct.pack('B', duration_ss))	# seconds
+		print( "    Song duration " + str(duration) + " seconds, " + str(duration_mm) + "m" + str(duration_ss) + "s" )
+		header_block.extend(struct.pack('B', duration_mm))	# minutes		
+		header_block.extend(struct.pack('B', duration_ss))	# seconds
 
 		# output the final byte stream
 		output_block = bytearray()	
 
 		# send header
-		output_block.append(struct.pack('B', len(header_block)))
+		output_block.extend(struct.pack('B', len(header_block)))
 		output_block.extend(header_block)
 
 		# send title
@@ -719,9 +725,9 @@ class VgmStream:
 
 		if len(title) > 254:
 			title = title[:254]
-		output_block.append(struct.pack('B', len(title) + 1))	# title string length
+		output_block.extend(struct.pack('B', len(title) + 1))	# title string length
 		output_block.extend(title)
-		output_block.append(struct.pack('B', 0))				# zero terminator
+		output_block.extend(struct.pack('B', 0))				# zero terminator
 
 		# send author
 		author = self.gd3_data['artist_eng'].decode("utf_16")
@@ -733,9 +739,9 @@ class VgmStream:
 
 		if len(author) > 254:
 			author = author[:254]
-		output_block.append(struct.pack('B', len(author) + 1))	# author string length
+		output_block.extend(struct.pack('B', len(author) + 1))	# author string length
 		output_block.extend(author)
-		output_block.append(struct.pack('B', 0))				# zero terminator
+		output_block.extend(struct.pack('B', 0))				# zero terminator
 
 		# send data with or without header
 		if rawheader:
@@ -744,6 +750,84 @@ class VgmStream:
 			output_block = data_block
 
 		# write file
-		print "Compressed VGM is " + str(len(output_block)) + " bytes long"
+		print( "Compressed VGM is " + str(len(output_block)) + " bytes long" )
 
 		return output_block
+
+
+
+			
+	# write vgm file (with same header data as the input, but from binary register data)
+	# registers is an array of 11 byte arrays, each byte array containing the tune data
+	def write_vgm(self, vgm_stream, filename):
+			
+		print("   Writing output VGM file '" + filename + "'")
+
+
+		vgm_stream_length = len(vgm_stream)		
+
+		# build the GD3 data block
+		gd3_data = bytearray()
+		gd3_stream = bytearray()	
+		gd3_stream_length = 0
+		
+		gd3_offset = 0
+		if self.STRIP_GD3 == False:
+			gd3_data.extend(self.gd3_data['title_eng'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['title_jap'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['game_eng'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['game_jap'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['console_eng'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['console_jap'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['artist_eng'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['artist_jap'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['date'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['vgm_creator'] + b'\x00\x00')
+			gd3_data.extend(self.gd3_data['notes'] + b'\x00\x00')
+			
+			gd3_stream.extend(b'Gd3 ')
+			gd3_stream.extend(struct.pack('I', 0x100))				# GD3 version
+			gd3_stream.extend(struct.pack('I', len(gd3_data)))		# GD3 length		
+			gd3_stream.extend(gd3_data)		
+			
+			gd3_offset = (64-20) + vgm_stream_length
+			gd3_stream_length = len(gd3_stream)
+		else:
+			print("   VGM Processing : GD3 tag was stripped")
+		
+		# build the full VGM output stream		
+		vgm_data = bytearray()
+		vgm_data.extend(self.vgm_magic_number)
+		vgm_data.extend(struct.pack('I', 64 + vgm_stream_length + gd3_stream_length - 4))				# EoF offset
+		vgm_data.extend(struct.pack('I', 0x00000151))		# Version
+		vgm_data.extend(struct.pack('I', self.metadata['sn76489_clock']))
+		vgm_data.extend(struct.pack('I', self.metadata['ym2413_clock']))
+		vgm_data.extend(struct.pack('I', gd3_offset))				# GD3 offset
+		vgm_data.extend(struct.pack('I', self.metadata['total_samples']))				# total samples
+		vgm_data.extend(struct.pack('I', 0)) #self.metadata['loop_offset']))				# loop offset
+		vgm_data.extend(struct.pack('I', 0)) #self.metadata['loop_samples']))				# loop # samples
+		vgm_data.extend(struct.pack('I', self.metadata['rate']))				# rate
+		vgm_data.extend(struct.pack('H', self.metadata['sn76489_feedback']))				# sn fb
+		vgm_data.extend(struct.pack('B', self.metadata['sn76489_shift_register_width']))				# SNW	
+		vgm_data.extend(struct.pack('B', 0))				# SN Flags			
+		vgm_data.extend(struct.pack('I', self.metadata['ym2612_clock']))		
+		vgm_data.extend(struct.pack('I', self.metadata['ym2151_clock']))	
+		vgm_data.extend(struct.pack('I', 12))				# VGM data offset
+		vgm_data.extend(struct.pack('I', 0))				# SEGA PCM clock	
+		vgm_data.extend(struct.pack('I', 0))				# SPCM interface	
+
+		# attach the vgm data
+		vgm_data.extend(vgm_stream)
+
+		# attach the vgm gd3 tag if required
+		if self.STRIP_GD3 == False:
+			vgm_data.extend(gd3_stream)
+		
+		# write to output file
+		vgm_file = open(filename, 'wb')
+		vgm_file.write(vgm_data)
+		vgm_file.close()
+		
+		print("   VGM Processing : Written " + str(int(len(vgm_data))) + " bytes, GD3 tag used " + str(gd3_stream_length) + " bytes")
+		
+		print("All done.")	
