@@ -243,6 +243,19 @@ class VgmPacker:
 					diff_block.append(marker)
 				else:
 					diff_block.append(input_block[n])
+
+		# test unpack/undiff
+		assert len(diff_block) == len(input_block)
+		rebuilt_block = bytearray()
+		for n in range(len(diff_block)):
+			d = diff_block[n]
+			if d == marker:
+				assert n != 0
+				rebuilt_block.append( rebuilt_block[n-1] )
+			else:
+				rebuilt_block.append( diff_block[n] )
+
+		assert rebuilt_block == input_block
 		return diff_block
 
 	# given a block of bytes, return a new version with deltas applied to each byte
@@ -316,7 +329,7 @@ class VgmPacker:
 		rle_block = bytearray()
 		n = 0
 		while (n < len(block)):
-			#print('offset ' + str(n))
+			#print('input offset=' + str(n/2) + ", rle_block offset=" + str(len(rle_block)))
 			offset = n
 			count = 0
 			while ((offset < len(block)-2) and (count < 15)):
@@ -326,7 +339,19 @@ class VgmPacker:
 				else:
 					break
 
+			# first byte is command, second byte is data
 			out = (block[n]<<8) + block[n+1]
+			#print("value=" + str(out) + ", run length=" + str(count))
+
+			#test = (block[n+0]<<4) + block[n+1] # top 6 bits plus bottom 4 bits = 10 bits
+			if (block[n+1] > 63) or (block[n+0] > 15):
+				print("Error at offset " + str(offset) + ", tone value is greater than 10 bits in size")
+
+
+			if (out > 4095):
+				print("Error at offset " + str(offset) + ", tone " + str(out) + " greater than 12 bits in size")
+
+
 			out |= ((count&15)<<12)
 			rle_block.append( (out>>8) & 255 )
 			rle_block.append( out & 255 )
@@ -423,6 +448,93 @@ class VgmPacker:
 		return r
 
 
+	def testUnpackLZ4(self, compressed, uncompressed):
+		unpacked = bytearray()
+		eof = False
+		debug = False
+		self.index = 4 # skip the block header
+		def getByte():		
+			byte = compressed[self.index]
+			self.index += 1
+			return byte
+
+		while not eof:
+			if debug:
+				print("")
+				print("new token, unpacked offset=" + str(len(unpacked)))
+			token = getByte()
+			literal_count = token >> 4
+			literal_length = literal_count
+			if debug:
+				print("literal_count=" + str(literal_count) + ", literal_length=" + str(literal_length))
+			if (literal_count == 15):
+				while True:
+					literal_count = getByte()
+					literal_length += literal_count
+					if debug:
+						print("literal_count=" + str(literal_count) + ", literal_length=" + str(literal_length))
+					if (literal_count != 255):
+						break
+
+			# copy literals
+			if debug:
+				print("copy literals - literal_length=" + str(literal_length))
+			for n in range(literal_length):
+				byte = getByte()
+				if debug:
+					print("literal byte copy n=" + str(n) + ", to offset " + str(len(unpacked)) + ", with byte " + str(hex(byte)))
+				unpacked.append( byte )
+
+			# compressed data always ends with literals, check for eof here.
+			if debug:
+				print("compressed_size=" + str(len(compressed)) + ", uncompressed_size=" + str(len(uncompressed)) + ", buffersize=" + str(len(unpacked)))
+			# mark eof if we've decoded all of the compressed data
+			eof = self.index == len(compressed)
+			if not eof:
+				# now do the match copy
+				match_count = token & 15
+				match_length = match_count + 4
+				if debug:
+					print("match_count=" + str(match_count) + ", match_length=" + str(match_length))
+
+				offset_token = getByte() # only 1 byte for offset in the LZ48 format
+				if debug:
+					print("offset_token=" + str(offset_token))
+				offset = len(unpacked) - offset_token
+				if (match_count == 15):
+					while True:
+						match_count = getByte()
+						match_length += match_count
+						if debug:
+							print("match_count=" + str(match_count) + ", match_length=" + str(match_length))
+
+						if (match_count != 255):
+							break
+
+				if debug:
+					print("copy matches, offset=" + str(offset) + ", match_length=" + str(match_length))
+
+
+
+				# copy match sequence
+				for n in range(match_length):
+					byte = unpacked[offset]
+					if debug:
+						print("match byte copy n=" + str(n) + ", from offset=" + str(offset) + ", to offset " + str(len(unpacked)) + ", with byte " + str(hex(byte)))
+					offset += 1
+					unpacked.append(byte)
+
+
+		# check the results
+		assert len(unpacked) == len(uncompressed)
+		assert unpacked == uncompressed
+		print(" Test LZ4 unpack passed. \n")
+
+
+
+
+
+
 	#----------------------------------------------------------
 	# Process(filename)
 	# Convert the given VGM file to a compressd VGC file
@@ -512,9 +624,66 @@ class VgmPacker:
 		#----------------------------------------------------------
 		registers = self.split_raw(data_block, True)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		# test packer for raw data unsplit
+		if False:
+			stream = bytearray()
+			for i in range(len(registers[0])):
+				for r in range(len(registers)):
+					stream.append(registers[r][i])
+
+			output = bytearray()					
+			lz4.beginFrame(output)
+
+			# re-write LZ4 magic number if incompatible
+			if self.LZ48 or use_huffman: #self.ENABLE_HUFFMAN:
+				n = 0x00
+				if use_huffman: #self.ENABLE_HUFFMAN:
+					n |= 0x80
+				output[0] = 0x56
+				output[1] = 0x47
+				output[2] = 0x43
+				output[3] = n
+
+			# LZ4 Compress the 8 data stream
+			compressed_block = lz4.compressBlock( stream )
+			self.testUnpackLZ4(compressed_block, stream)
+			output += compressed_block
+
+			# Step 5 - write the output file
+			lz4.endFrame(output)
+			self.report(lz4, data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks ")
+
+			# write the lz4 compressed file.
+			open("simon.vgc", "wb").write( output )
+
+
+
 		#------------------------------------------------------------------------------
 		# Construct the optimal VGC file format output
 		#------------------------------------------------------------------------------
+		# check there's no odd noise settings
+		if True:
+			invalid_noise_range = False
+			for n in range(len(registers[6])):
+				noise = registers[6][n]
+				if noise > 7:
+					print(" - Found invalid noise register setting of " + str(noise) + ", at offset " + str(n))
+					invalid_noise_range = True
+
 
 		# Step 1 - reformat the register data streams
 		streams = []
@@ -532,8 +701,8 @@ class VgmPacker:
 			# (so we can see how other compressors compare with it)
 			count = 0
 			for s in streams:
-				open(filename+"." + str(count) + ".part", "wb").write( s )
-				count += 1
+				open(dst_filename+"." + str(count) + ".part", "wb").write( s )
+				count += 1		
 
 		# Step 2 - LZ4 compress these streams
 
@@ -553,7 +722,12 @@ class VgmPacker:
 
 		# LZ4 Compress the 8 data streams
 		for i in range(len(streams)):
-			streams[i] = lz4.compressBlock( streams[i] )
+			#print("lz4 compressing stream #" + str(i))
+			stream = streams[i]
+			compressed_block = lz4.compressBlock( stream )
+			self.testUnpackLZ4(compressed_block, stream)
+
+			streams[i] = compressed_block
 
 
 		# Step 3 - Huffcode these streams (optional - better ratio, lower decoder performance)
